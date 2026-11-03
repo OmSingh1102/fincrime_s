@@ -1,0 +1,21 @@
+flask==3.1.1
+# World-Check export PDF the EDD Review modal attaches. reportlab ships only
+# the Vera fonts, so wc_report_pdf registers Arial from C:\Windows\Fonts when
+# it is there — without that a Cyrillic native name renders as boxes.
+reportlab>=4.0
+pillow>=10
+# .env loading for a deployed copy (see .env.example). Harmless when absent.
+python-dotenv>=1.0
+# Model assessment: the Anthropic SDK, pointed at Straive's LLM Foundry gateway.
+anthropic>=1.8
+# The AI Agent sends the document images to Claude as PNG; resvg draws the SVGs
+# (blur, glare and crop included) with no native library to install.
+resvg-py>=0.5
+# OCR of uploaded ID images (the passport's MRZ) beside Claude's read: the
+# wrapper for Tesseract, which is installed separately (winget install
+# UB-Mannheim.TesseractOCR on Windows, apt install tesseract-ocr on Linux).
+pytesseract>=0.3.10
+# Production servers: waitress on Windows (a public tunnel from a laptop),
+# gunicorn on a Linux host (Render, Railway — see render.yaml / Procfile).
+waitress>=3.0
+gunicorn>=22.0 ; sys_platform != "win32"
