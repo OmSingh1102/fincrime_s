@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% from "_badges.html" import sla_chip %}
+{% block title %}Pipeline{% endblock %}
+
+{% block content %}
+<div class="page-head">
+    <div><h2>Case pipeline — {{ tenants[tenant].label }}</h2>
+        <p>Every open case by tier, live (SOP 5.2.3: L1 → L2 → L3 with real-time visibility). A hand-off is routed the moment it happens; a card without a name is waiting for capacity.</p></div>
+    <div class="row"><span class="badge blue">{{ vm.total_open }} open</span></div>
+</div>
+
+<div class="kpi-strip">
+    <div class="kpi tone-success"><div class="l">Hand-off lag · hub routing</div><div class="v">{{ vm.lag.hub_text }}</div><div class="hint">{{ vm.lag.hub_n }} hand-off(s) routed by the hub</div></div>
+    <div class="kpi"><div class="l">Hand-off lag · bot allocation</div><div class="v">{{ vm.lag.bot_text }}</div><div class="hint">{{ vm.lag.bot_n }} hand-off(s) in the pre-hub history</div></div>
+    <div class="kpi {% if vm.lag.waiting %}tone-warning{% endif %}"><div class="l">Waiting for a taker</div><div class="v">{{ vm.lag.waiting }}</div><div class="hint">handed off, nobody holding it yet</div></div>
+</div>
+
+<div class="pipeline">
+    {% for col in vm.columns %}
+    <div class="pcol">
+        <div class="pcol-head"><div><div class="pcol-title">{{ col.label }}</div><div class="pcol-sub">{{ col.sub }}</div></div><span class="pcol-n">{{ col.n }}</span></div>
+        {% if col.breached or col.at_risk or col.unassigned %}
+        <div class="pcol-flags">{% if col.breached %}<span class="sla late">{{ col.breached }} breached</span>{% endif %}{% if col.at_risk %}<span class="sla warn">{{ col.at_risk }} at risk</span>{% endif %}{% if col.unassigned %}<span class="badge slate">{{ col.unassigned }} unassigned</span>{% endif %}</div>
+        {% endif %}
+        {% for r in col.cases %}{% set c = r.case %}
+        <a class="pcard" href="{{ url_for('kyc_detail', case_id=c.id) }}" title="{{ c.id }}">
+            <div class="pcard-name">{{ c.client.legal_name }}</div>
+            <div class="pcard-meta"><span class="mono">…{{ c.id[-6:] }}</span> · {{ r.age_h }} h old{% if c.pending_reason %} · {{ c.pending_reason }}{% endif %}</div>
+            <div class="pcard-foot">
+                {% if r.reviewer %}<span class="who">{{ r.reviewer }}</span>
+                {% elif col.key in ('intake', 'waiting', 'closed') %}<span class="who muted">{{ c.closed_by|who if col.key == 'closed' and c.closed_by else '—' }}</span>
+                {% else %}<span class="who queued">Unassigned{% if r.queued %} · waiting for capacity{% endif %}</span>{% endif %}
+                {{ sla_chip(r.sla) }}
+            </div>
+        </a>
+        {% else %}<div class="no-data" style="padding:14px 6px">Empty</div>{% endfor %}
+        {% if col.more %}<a class="pcol-more" href="{{ url_for('kyc_list') }}">+{{ col.more }} more in the case list</a>{% endif %}
+    </div>
+    {% endfor %}
+</div>
+
+<div class="card mt-12 pad-0">
+    <div class="card-head" style="padding-bottom:10px"><div class="card-title">Hand-off feed</div><div class="card-sub">newest first — lag is the time between a tier handing a case off and the next tier holding it</div></div>
+    <table class="tbl dense">
+        <thead><tr><th>When</th><th>Case</th><th>From</th><th>To</th><th>Taken by</th><th>Lag</th><th>Via</th></tr></thead>
+        <tbody>
+        {% for f in vm.feed %}
+        <tr>
+            <td class="nowrap">{{ f.at }}</td>
+            <td class="nowrap"><a href="{{ url_for('kyc_detail', case_id=f.case.id) }}">{{ f.case.client.legal_name }}</a></td>
+            <td class="nowrap">{{ vocab.LEVEL_LABELS.get(f['from'], f['from']) }}</td>
+            <td class="nowrap">{{ vocab.LEVEL_LABELS.get(f.to, f.to) }}</td>
+            <td class="nowrap">{{ f.assigned_to or '—' }}</td>
+            <td><span class="sla {{ 'ok' if f.lag == '0 s' else ('warn' if f.assigned_at else 'late') }}">{{ f.lag }}</span></td>
+            <td>{{ 'Hub routing' if f.via == 'hub' else 'Bot allocation (history)' }}</td>
+        </tr>
+        {% else %}<tr><td colspan="7"><div class="no-data">No hand-off recorded yet.</div></td></tr>{% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

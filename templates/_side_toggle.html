@@ -1,0 +1,29 @@
+{# Sidebar collapse. Shared by the four app shells.
+
+   Like the nav-group open state in admin_base.html, this is a per-browser
+   display preference rather than account data, so it lives in localStorage and
+   never reaches the session. One key for all four shells: collapsing the rail
+   as a team lead and then viewing as an agent should not expand it again. #}
+<script>
+(function () {
+    var KEY = 'ui:sideCollapsed';
+    var app = document.getElementById('app');
+    if (!app) { return; }
+
+    if (localStorage.getItem(KEY) === 'true') { app.classList.add('side-collapsed'); }
+
+    document.querySelectorAll('[data-side-toggle]').forEach(function (btn) {
+        function paint() {
+            var off = app.classList.contains('side-collapsed');
+            btn.innerHTML = off ? '&#8250;' : '&#8249;';
+            btn.setAttribute('aria-label', off ? 'Expand sidebar' : 'Collapse sidebar');
+        }
+        paint();
+        btn.addEventListener('click', function () {
+            var off = app.classList.toggle('side-collapsed');
+            localStorage.setItem(KEY, String(off));
+            paint();
+        });
+    });
+})();
+</script>

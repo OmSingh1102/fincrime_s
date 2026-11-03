@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% from "_badges.html" import status_badge, tag_chip, sla_chip %}
+{% block title %}L2 / EDD Queue{% endblock %}
+
+{% block content %}
+<div class="page-head">
+    <div><h2>L2 / EDD Queue</h2><p>Escalated cases for {{ tenants[tenant].label }}, plus businesses waiting for a Checker 2 sign-off. Hand-offs are routed to a named analyst the moment they happen; open a case and use Review to decide it.</p></div>
+    <div class="row">
+        <span class="badge amber">L2: {{ vm.l2 }}</span><span class="badge rose">EDD: {{ vm.edd }}</span><span class="badge blue">Checker 2: {{ vm.c2 }}</span>
+    </div>
+</div>
+{% if vm.hidden %}
+<div class="note info mb-12">{{ vm.hidden }} case(s) are hidden from you because you reviewed them at an earlier level, or were Checker 1 on them (segregation of duties).</div>
+{% endif %}
+<div class="card pad-0">
+    <table class="tbl">
+        <thead><tr><th>Case ID</th><th>Client Name</th><th>Level</th><th>Pending Reason</th><th>Escalated</th><th>EDD due</th><th>SLA</th><th>Previous Reviewer</th><th>Current Reviewer</th><th>Screening</th><th></th></tr></thead>
+        <tbody>
+        {% for r in vm.rows %}{% set c = r.case %}
+        <tr>
+            <td class="nowrap"><span class="cell-id">{{ c.id }}</span> {% for t in c.tags %}{{ tag_chip(t) }}{% endfor %}</td>
+            <td class="strong nowrap">{{ c.client.legal_name }}</td>
+            <td><span class="badge {{ 'rose' if r.level == 'EDD' else ('blue' if r.level == 'Checker 2' else 'amber') }}">{{ vocab.LEVEL_LABELS.get(r.level, r.level) }}</span></td>
+            <td>{{ c.pending_reason or '-' }}</td>
+            <td class="nowrap">{{ c.escalated_at }}</td>
+            <td class="nowrap">{{ c.edd_due_at }}</td>
+            <td>{{ sla_chip(r.sla) }}</td>
+            <td class="nowrap">{{ c.previous_reviewer or '-' }}</td>
+            <td class="nowrap">{% if r.mine %}<b>you</b>{% else %}{{ c.current_reviewer|who if c.current_reviewer else '-' }}{% endif %}{% if r.routed %} <span class="tiny muted" title="{{ c.routing.reason }}">auto-routed</span>{% endif %}</td>
+            <td>{% if c.screening.hit %}<a href="{{ url_for('ns_case', alert_case_id=c.screening.alert_case_id) }}">screening case</a>{% else %}-{% endif %}</td>
+            <td><a class="btn btn-primary btn-xs" href="{{ url_for('kyc_detail', case_id=c.id) }}">Open</a></td>
+        </tr>
+        {% else %}
+        <tr><td colspan="11"><div class="no-data">{{ icon('layers') }}Nothing is waiting for you at L2 or EDD.</div></td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

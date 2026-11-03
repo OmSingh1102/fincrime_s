@@ -1,0 +1,353 @@
+{% extends "base.html" %}
+{% from "_badges.html" import outcome_badge, hit_mark, workflow_badge %}
+{% from "_modals.html" import modal_open, modal_close %}
+{% from "_stepper.html" import stepper %}
+{% from "_viewer.html" import viewer_tools %}
+{% block title %}{{ (s.read or {}).get('fields', {}).get('full_name') or s.id }} - Screening case{% endblock %}
+
+{% block content %}
+{# A screening case (an uploaded ID) in the console's case layout: the sidebar
+   and the Overview / Documents / Screening / Decisions tabs of a KYC case.
+   Every value is the upload's, the model's read, the World-Check hits' or an
+   analyst's; a field nothing filled is left out. #}
+{% set r = s.read or {} %}{% set f = r.fields or {} %}{% set sc = s.screening or {} %}{% set hits = sc.hits or [] %}
+{% set ns = namespace(open=0, ai_wait=0, ai_done=0, auto=0) %}
+{% for h in hits %}{% if not h.resolution %}{% set ns.open = ns.open + 1 %}{% elif h.resolution.auto %}{% set ns.auto = ns.auto + 1 %}{% endif %}{% if (h.ai or {}).status == 'pending' %}{% set ns.ai_wait = ns.ai_wait + 1 %}{% elif (h.ai or {}).status == 'done' %}{% set ns.ai_done = ns.ai_done + 1 %}{% endif %}{% endfor %}
+{% set closed = s.status == 'closed' %}
+{% set name = f.full_name or ((f.given_names ~ ' ' ~ f.surname)|trim) %}
+<div class="case-layout">
+<aside class="case-rail" id="case-rail">
+    <div class="rail-head">
+        <div class="rail-name">{{ name or 'Name not read' }}</div>
+        <div class="rail-ids"><span>Case <b class="mono">{{ s.id }}</b></span>{% if f.document_number %}<span>{{ r.document_type or 'Document' }} <b class="mono">{{ f.document_number }}</b></span>{% endif %}</div>
+        <div class="rail-chips">
+            {% if closed %}<span class="badge {{ {'True match': 'solid-rose', 'Possible match': 'amber'}.get(s.closed.outcome, 'emerald') }}" id="case-status">Closed · {{ s.closed.outcome }}</span>
+            {% else %}<span class="badge blue" id="case-status">Open</span>{% endif %}
+            {% if closed and s.closed.auto %}{{ workflow_badge('auto-verified', s.closed.note) }}
+            {% elif not closed and ns.open %}{{ workflow_badge('human-in-the-loop', 'An analyst gives the hits the AI screening rule did not clear their outcome') }}{% endif %}
+            {% if s.qc_sample %}<span class="badge amber" title="The AI screening rule would have closed it ({{ s.qc_sample.pct }}% of such cases go to an analyst)">QC sample</span>{% endif %}
+            {% if ns.ai_wait %}<span class="badge blue"><span class="spin"></span> AI reviewing {{ ns.ai_wait }}</span>{% endif %}
+            {% include "_scan_verdict.html" %}
+        </div>
+    </div>
+
+    <div class="rail-section rail-actions">
+        {% if not closed and ns.open %}
+        <a class="btn btn-primary btn-sm btn-block" id="review-btn" href="{{ url_for('scan_alerts', scan_id=s.id) }}" title="The World-Check hits: the AI's assessment, and the alert outcome">Review</a>
+        {% else %}
+        {% if closed %}{% set why = 'Case is closed' %}{% elif not s.screening %}{% set why = 'Nobody was searched: the ID was not read' %}{% elif sc.error %}{% set why = 'The search failed: use Search again on the Screening tab' %}{% else %}{% set why = 'No hit: confirm no match on the Screening tab' %}{% endif %}
+        <button type="button" class="btn btn-primary btn-sm btn-block" disabled title="{{ why }}">Review</button>
+        <div class="rail-why" id="review-why">{{ why }}</div>
+        {% endif %}
+        <div class="btn-row">
+            <a class="btn btn-outline btn-sm" href="{{ url_for('scan_id') }}" title="Upload another ID">{{ icon('upload') }} Upload</a>
+            <a class="btn btn-outline btn-sm" href="{{ url_for('scan_json', scan_id=s.id) }}" title="The case as JSON">JSON</a>
+            <form method="post" action="{{ url_for('scan_delete', scan_id=s.id) }}" style="margin:0" onsubmit="return confirm('Delete this case and its ID image?');">
+                <button class="btn btn-outline btn-sm" type="submit" style="width:100%">Delete</button></form>
+        </div>
+        <div class="rail-links">
+            {% if s.screening and not sc.error %}<a href="{{ url_for('wc_case', wc_case_id=s.id, tab='audit') }}" target="_blank" rel="noopener">{{ icon('clock') }} Audit History</a>{% endif %}
+            <a href="{{ url_for('screening_sop') }}">{{ icon('list') }} Screening SOP</a>
+        </div>
+    </div>
+
+    <div class="rail-section">
+        <div class="rail-label">Progress</div>
+        {{ stepper(points, vertical=True) }}
+    </div>
+
+    <div class="rail-section">
+        <div class="rail-label">Case</div>
+        <div class="rail-facts">
+            <div><span class="l">Source</span><span class="v">ID upload</span></div>
+            <div><span class="l">Uploaded by</span><span class="v">{{ s.by|who }}</span></div>
+            <div><span class="l">Uploaded</span><span class="v">{{ s.at }}</span></div>
+            <div><span class="l">File</span><span class="v">{{ s.file }}</span></div>
+            {% if s.model %}<div><span class="l">Read by</span><span class="v">{{ s.model.label }}</span></div>{% endif %}
+            {% if s.screening %}<div><span class="l">Screened on</span><span class="v">{{ 'World-Check One' if sc.source == 'World-Check One' else 'Stand-in World-Check' }}</span></div>{% endif %}
+            {% if hits %}<div><span class="l">Hits</span><span class="v">{{ hits|length }} · {{ ns.open }} left for review</span></div>{% endif %}
+            {% if closed %}<div><span class="l">Closed by</span><span class="v">{{ s.closed.by|who }}</span></div>
+            <div><span class="l">Closed</span><span class="v">{{ s.closed.at }}</span></div>{% endif %}
+        </div>
+    </div>
+</aside>
+
+<section class="case-main">
+    <div class="tabs case-tabs" role="tablist" aria-label="Case sections">
+        <button type="button" class="tab active" role="tab" data-tab="overview" aria-selected="true">{{ icon('user') }} Overview</button>
+        <button type="button" class="tab" role="tab" data-tab="documents" aria-selected="false">{{ icon('image') }} Documents <span class="n">1</span></button>
+        <button type="button" class="tab" role="tab" data-tab="screening" aria-selected="false">{{ icon('shield') }} Screening{% if ns.open %} <span class="tab-dot rose" title="World-Check hits left for review"></span>{% endif %}</button>
+        <button type="button" class="tab" role="tab" data-tab="decisions" aria-selected="false">{{ icon('clipboard') }} Decisions</button>
+    </div>
+
+    {# ── Overview: who the ID names, and the check on the read ── #}
+    <div class="tab-panel" role="tabpanel" data-panel="overview">
+        {% if s.error %}<div class="verdict-box differs small mb-8">{{ s.error }}</div>{% endif %}
+        {% if s.fallback %}<div class="note warn small mb-8" id="reader-fallback">{{ s.fallback }}</div>{% endif %}
+        <div class="fact-cards">
+            <div class="card">
+                <div class="card-head"><div class="card-title">Identity</div></div>
+                <div class="card-body fact-list">
+                    <div><span class="l">Legal name</span><span class="v strong">{{ name or '-' }}</span></div>
+                    <div><span class="l">Date of birth</span><span class="v strong">{{ f.date_of_birth or '-' }}</span></div>
+                    {% if f.sex %}<div><span class="l">Sex</span><span class="v">{{ f.sex }}</span></div>{% endif %}
+                    <div><span class="l">Nationality</span><span class="v strong">{{ f.nationality or '-' }}</span></div>
+                    <div><span class="l">ID type</span><span class="v">{{ r.document_type or '-' }}</span></div>
+                    <div><span class="l">ID number</span><span class="v strong mono">{{ f.document_number or '-' }}</span></div>
+                    <div><span class="l">Issuing place</span><span class="v">{{ r.issuing_country or '-' }}</span></div>
+                    {% if f.date_of_expiry %}<div><span class="l">Expiry</span><span class="v">{{ f.date_of_expiry }}</span></div>{% endif %}
+                </div>
+            </div>
+            <div class="card">
+                <div class="card-head"><div class="card-title">Address &amp; more</div></div>
+                <div class="card-body fact-list">
+                    {% set more = namespace(n=0) %}
+                    {% for key, label in (('address', 'Address'), ('place_of_birth', 'Place of birth'), ('father_or_spouse_name', "Father's / spouse's name"), ('personal_number', 'Personal number'), ('date_of_issue', 'Issued'), ('issuing_authority', 'Issuing authority')) %}
+                    {% if f[key] %}{% set more.n = more.n + 1 %}<div><span class="l">{{ label }}</span><span class="v">{{ f[key] }}</span></div>{% endif %}
+                    {% endfor %}
+                    {% if not more.n %}<div><span class="l">-</span><span class="v muted">None printed on this document.</span></div>{% endif %}
+                    <div><span class="l">Case source</span><span class="v">ID upload</span></div>
+                </div>
+            </div>
+            <div class="card" id="id-check">
+                <div class="card-head"><div class="card-title">ID check</div>{% include "_scan_verdict.html" %}</div>
+                <div class="card-body fact-list">
+                    <div><span class="l">Read by</span><span class="v">{{ s.model.label if s.model else 'No model read' }}</span></div>
+                    {% set cs = s.checks or [] %}
+                    <div><span class="l">Checks</span><span class="v">{{ cs|selectattr('state', 'equalto', 'ok')|list|length }} pass{% set w = cs|selectattr('state', 'equalto', 'warn')|list|length %}{% if w %} · {{ w }} to check{% endif %}{% set x = cs|selectattr('state', 'equalto', 'fail')|list|length %}{% if x %} · {{ x }} failed{% endif %}</span></div>
+                    {% set warn = cs|rejectattr('state', 'equalto', 'ok')|list %}
+                    <div><span class="l">Reason</span><span class="v">{% for c in warn %}{{ c.label }}: {{ c.detail }}{% if not loop.last %}<br>{% endif %}{% else %}-{% endfor %}</span></div>
+                    <div class="fact-actions">
+                        <button type="button" class="btn btn-outline btn-xs" onclick="openModal('extract-modal')">Extracted infos</button>
+                        <button type="button" class="btn btn-primary btn-xs" onclick="docPreview('{{ url_for('scan_image', scan_id=s.id) }}', 'The uploaded ID')">View ID</button>
+                    </div>
+                </div>
+            </div>
+            {% set v = s.idv %}
+            {% if v or didit_ready %}
+            <div class="card" id="id-vendor">
+                <div class="card-head"><div class="card-title">ID vendor check</div>
+                    {% if v and idv_sandbox %}<span class="badge amber" title="Didit's sandbox answers every call with the same sample">Sandbox: not a real check</span>
+                    {% elif v and v.status == 'Approved' and idv_diffs %}<span class="badge amber">Approved a different document</span>
+                    {% elif v %}<span class="badge {{ {'Approved': 'emerald', 'Declined': 'rose', 'pending': 'blue'}.get(v.status, 'amber') }}">{{ {'pending': 'Checking…', 'error': 'Not checked'}.get(v.status, v.status) }}</span>{% endif %}</div>
+                <div class="card-body fact-list">
+                    <div><span class="l">Vendor</span><span class="v">Didit</span></div>
+                    {% if v and v.status == 'error' %}<div><span class="l">Reason</span><span class="v">{{ v.error }}</span></div>
+                    {% elif v and v.status != 'pending' %}
+                    {% if idv_sandbox %}<div class="note warn small" id="idv-sandbox">The key is a Didit <b>sandbox</b> key: Didit answered "{{ v.status }}" with its fixed sample without looking at this ID. Nothing is closed on it; a live key from the Didit console checks the document.</div>
+                    {% elif idv_diffs %}<div class="note warn small" id="idv-differs">Didit's read is not this ID's, so its "{{ v.status }}" does not count: the case stays with an analyst.</div>{% endif %}
+                    <div><span class="l">Document</span><span class="v">{{ v.document_type or '-' }}{% if v.issuing_state %} · {{ v.issuing_state }}{% endif %}</span></div>
+                    <div><span class="l">Read by Didit</span><span class="v">{{ v.full_name or '-' }}{% if v.date_of_birth %} · {{ v.date_of_birth }}{% endif %}{% if v.document_number %} · <span class="mono">{{ v.document_number }}</span>{% endif %}</span></div>
+                    {% for what, theirs, ours in idv_diffs %}<div><span class="l">{{ what }} differs</span><span class="v">Didit {{ theirs }} · the ID {{ ours }}</span></div>{% endfor %}
+                    <div><span class="l">Warnings</span><span class="v">{% for w in v.warnings %}<span class="badge {{ 'rose' if w.declines else 'slate' }}" title="{{ w.risk }}">{{ w.text }}</span> {% else %}none{% endfor %}</span></div>
+                    {% if v.quality %}<div><span class="l">Photo quality</span><span class="v">{{ v.quality.overall_score }}/100{% if v.quality.is_document_fully_visible == false %} · not fully visible{% endif %}</span></div>{% endif %}
+                    <div><span class="l">Checked</span><span class="v">{{ v.at }}{% if idv_sandbox %} · free (sandbox){% elif v.cost %} · ${{ '%.2f'|format(v.cost) }}{% endif %}</span></div>
+                    {% elif v %}<div><span class="l">Status</span><span class="v">Sent to Didit; this page refreshes when it answers.</span></div>
+                    {% else %}<div><span class="l">Status</span><span class="v">Not checked yet.</span></div>{% endif %}
+                    {% if didit_ready and not closed and (not v or v.status != 'pending') %}
+                    <div class="fact-actions"><form method="post" action="{{ url_for('scan_idv', scan_id=s.id) }}" style="margin:0"><button class="btn btn-outline btn-xs" type="submit">{{ 'Verify again' if v else 'Verify with Didit' }}</button></form></div>
+                    {% endif %}
+                </div>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    {# ── Documents: the uploaded image, what was read off it, the checks ── #}
+    <div class="tab-panel" role="tabpanel" data-panel="documents" hidden>
+        <div class="doc-grid" id="scan-image">
+            {% set src = url_for('scan_image', scan_id=s.id) %}
+            <div class="doc-card">
+                <button type="button" class="doc-thumb" onclick="docPreview('{{ src }}', 'The uploaded ID')" title="Preview">
+                    <img src="{{ src }}" alt="The uploaded document" loading="lazy"></button>
+                <div class="doc-meta">
+                    <div class="doc-name">{{ r.document_type or 'ID document' }}</div>
+                    <div class="doc-sub">{{ s.info.width }} × {{ s.info.height }} px as read · uploaded as {{ s.info.format }} · EXIF removed</div>
+                    <div class="doc-sub"><span class="badge blue">Uploaded</span> by {{ s.by|who }} · {{ s.at }}</div>
+                </div>
+                <div class="doc-actions">
+                    <button type="button" class="btn btn-primary btn-xs" onclick="docPreview('{{ src }}', 'The uploaded ID')">Preview</button>
+                    <a class="btn btn-outline btn-xs" href="{{ src }}" target="_blank" rel="noopener">Open in new tab</a>
+                </div>
+            </div>
+        </div>
+        <div class="fact-cards mt-12">
+            <div class="card" id="scan-fields">
+                <div class="card-head"><div class="card-title">Information fetched</div>
+                    <div class="card-sub">{% if s.model %}read by {{ s.model.label }}{% else %}no model read{% endif %}</div></div>
+                <div class="card-body fact-list">
+                    {% set shown = namespace(n=0, missing=[]) %}
+                    {% for key, label in fields %}
+                        {% if f[key] %}{% set shown.n = shown.n + 1 %}
+                        <div><span class="l">{{ label }}</span><span class="v strong">{{ f[key] }}{% if key in (r.uncertain or []) %} <span class="badge amber">check</span>{% endif %}</span></div>
+                        {% else %}{% set shown.missing = shown.missing + [label] %}{% endif %}
+                    {% endfor %}
+                    {% if not shown.n %}<div><span class="l">—</span><span class="v muted">No field was read.</span></div>{% endif %}
+                    {% if r %}<div><span class="l">Not on the document</span><span class="v small muted">{{ shown.missing|join(', ') or '—' }}</span></div>{% endif %}
+                    {% if r.note %}<div><span class="l">Note</span><span class="v">{{ r.note }}</span></div>{% endif %}
+                </div>
+            </div>
+            <div>
+                <div class="card" id="scan-checks">
+                    <div class="card-head"><div class="card-title">Document checks</div><div class="card-sub">computed by code on what was read</div></div>
+                    <div class="card-body">
+                        {% for c in s.checks %}
+                        <div class="scan-check {{ c.state }}"><span class="dot"></span><div><b>{{ c.label }}</b><div class="small">{{ c.detail }}</div></div></div>
+                        {% else %}<div class="small muted">No check could run.</div>{% endfor %}
+                    </div>
+                </div>
+                <div class="card mt-12" id="scan-mrz">
+                    <div class="card-head"><div class="card-title">Machine-readable zone</div><div class="card-sub">{{ 'as OCR read it' if r.mrz_by else 'as the model transcribed it' }}</div></div>
+                    <div class="card-body small">
+                        {% if r.mrz %}<pre class="ocr-mrz">{{ r.mrz|join('\n') }}</pre>{% else %}<div class="muted">None on the document, or none read.</div>{% endif %}
+                    </div>
+                </div>
+                {% if r and r.ocr_text is defined %}
+                <div class="card mt-12" id="scan-ocr-text">
+                    <div class="card-head"><div class="card-title">Text OCR read</div><div class="card-sub">the whole page, as Tesseract read it</div></div>
+                    <div class="card-body small">{% if r.ocr_text %}<pre class="ocr-mrz" style="white-space:pre-wrap">{{ r.ocr_text }}</pre>{% else %}<div class="muted">No text found.</div>{% endif %}</div>
+                </div>
+                {% endif %}
+                {% if s.model %}<div class="small muted mt-8" id="scan-cost">Read: {{ s.model.label }}, {{ s.model.seconds }} s{% if s.model.tokens_in is defined %}, {{ s.model.tokens_in }} tokens in / {{ s.model.tokens_out }} out{% endif %}, {% if s.model.model == 'tesseract-ocr' %}free (on this machine){% else %}${{ '%.4f'|format(s.model.cost) }} at list price{% endif %}.</div>{% endif %}
+            </div>
+        </div>
+    </div>
+
+    {# ── Screening: the World-Check search, as the case's screening result ── #}
+    <div class="tab-panel" role="tabpanel" data-panel="screening" hidden>
+        <div class="card" id="scan-screening">
+            <div class="card-head"><div class="card-title">Screening result</div>
+                <div class="row" style="gap:8px">
+                    {% if s.screening and not sc.error %}
+                    <a class="btn btn-outline btn-sm" id="open-wc" href="{{ url_for('wc_case', wc_case_id=s.id) }}" target="_blank" rel="noopener" title="Opens in a new tab">{{ icon('globe') }} Open in World-Check<span class="ext-ic">{{ icon('external-link') }}</span></a>
+                    {% endif %}
+                    {% if s.screening and not closed %}
+                    <form method="post" action="{{ url_for('scan_screen', scan_id=s.id) }}" style="margin:0"><button class="btn btn-outline btn-sm" type="submit">{{ icon('refresh-cw') }} Search again</button></form>
+                    {% endif %}
+                </div>
+            </div>
+            <div class="card-body">
+            {% if not s.screening %}
+                <div class="small muted">{% if not s.read %}The ID was not read, so nobody could be searched: upload it again once a model is configured, or a clearer photo.{% else %}The model does not take this for an identity document with a name on it, so nobody was searched.{% endif %}</div>
+            {% elif sc.error %}
+                <div class="verdict-box differs small">{{ sc.error }}</div>
+            {% else %}
+                <div class="small mb-8">Screening Alert Hit: {{ hit_mark('Hit' if hits else 'No Match') }}</div>
+                {% if hits %}<div class="small mb-8 muted" id="ai-summary">AI: {{ ns.ai_done }} of {{ hits|length }} hit{{ 's' if hits|length != 1 }} reviewed under the screening SOP{% if ns.ai_wait %}, {{ ns.ai_wait }} still reviewing{% endif %}; {% if ns.auto %}{{ ns.auto }} cleared by the AI screening rule, {% endif %}{{ hits|length - ns.open - ns.auto }} given an outcome by an analyst, {{ ns.open }} left for review. <a href="{{ url_for('screening_sop') }}">The SOP</a></div>{% endif %}
+                <table class="tbl dense">
+                    <thead><tr><th>Platform Name</th><th>User Name</th><th>Screen time</th><th>Name screening list</th><th>Screening result</th><th>Alert ID</th></tr></thead>
+                    <tbody>
+                    <tr>
+                        <td>{{ 'World-Check One' if sc.source == 'World-Check One' else 'World-Check' }}{% if sc.source == 'stand-in' %} <span class="tag" title="{{ sc.source_label }}">stand-in</span>{% endif %}</td>
+                        <td>{{ sc.searched.name }}</td><td class="nowrap">{{ sc.at }}</td>
+                        <td>{{ hits|map(attribute='category')|unique|join(' / ') if hits else 'World-Check' }}</td>
+                        <td>{{ hit_mark('Hit' if hits else 'No Match') }}</td>
+                        <td>{% if hits %}<span class="cell-hex" title="{{ s.id }}">{{ s.id }}</span>
+                            <a class="btn btn-outline btn-xs" id="alerts-details" href="{{ url_for('scan_alerts', scan_id=s.id) }}" target="_blank" rel="noopener" title="Opens in a new tab">Details<span class="ext-ic">{{ icon('external-link') }}</span></a>
+                            {% else %}<span class="muted">–</span>{% endif %}</td>
+                    </tr>
+                    </tbody>
+                </table>
+                {% if not hits %}
+                <div class="screen-none mt-12" id="screen-none">
+                    <div><b>No World-Check record matches the name.</b>
+                        <div class="small muted">No record of {{ 'World-Check One' if sc.source != 'stand-in' else 'the stand-in watchlist' }} scored the name at or above the search's floor ({{ 'set by World-Check' if sc.source != 'stand-in' else 'Settings' }}).</div></div>
+                    {% if not closed %}
+                    <form method="post" action="{{ url_for('scan_close', scan_id=s.id) }}" class="row">
+                        <input class="input input-sm" name="note" placeholder="Note (optional)" style="min-width:240px">
+                        <button class="btn btn-primary btn-sm" type="submit">{{ icon('check') }} Confirm no match and close</button>
+                    </form>
+                    {% endif %}
+                </div>
+                {% endif %}
+            {% endif %}
+            {% if closed %}<div class="small mt-12" id="scan-closed">Closed as <b>{{ s.closed.outcome }}</b> by {{ s.closed.by|who }} on {{ s.closed.at }}.{% if s.closed.note %} {{ s.closed.note }}{% endif %}</div>{% endif %}
+            </div>
+        </div>
+    </div>
+
+    {# ── Decisions: the AI's suggestion and the analyst's outcome on each hit ── #}
+    <div class="tab-panel" role="tabpanel" data-panel="decisions" hidden>
+        <div class="card pad-0" id="scan-decisions">
+            <div class="card-head" style="padding-bottom:10px"><div class="card-title">Review decisions</div></div>
+            <div class="tbl-scroll">
+            <table class="tbl dense">
+                <thead><tr><th>Check Point</th><th>AI suggestion</th><th>Decision</th><th>Agrees with the AI</th><th>Risk</th><th>Reason</th><th>Comment</th><th>Operated Time</th><th>By</th></tr></thead>
+                <tbody>
+                {% for h in hits %}{% set ai = h.ai or {} %}{% set res = h.resolution %}
+                <tr>
+                    <td class="strong nowrap">{{ h.name }} <span class="tiny muted mono">{{ h.uid }}</span></td>
+                    <td class="nowrap">{% if ai.status == 'done' %}{{ outcome_badge(outcomes[ai.suggested]) }} <span class="tiny muted">{{ ai.confidence }}%</span>{% elif ai.status == 'pending' %}<span class="tiny muted">reviewing…</span>{% else %}-{% endif %}</td>
+                    <td>{% if res %}{{ outcome_badge(outcomes[res.status]) }}{% else %}{{ outcome_badge('Pending') }}{% endif %}</td>
+                    <td>{% if res and res.auto %}<span class="badge emerald" title="{{ res.note }}">Cleared by the rule</span>{% elif res and res.ai_suggested %}{{ 'Yes' if res.agreed else 'No' }}{% else %}-{% endif %}</td>
+                    <td>{% if res and res.risk %}{{ outcome_badge(res.risk) }}{% else %}-{% endif %}</td>
+                    <td>{{ (res.reason if res else '') or '-' }}</td>
+                    <td><span class="ellipsis" title="{{ res.note if res else '' }}">{{ (res.note if res else '') or '-' }}</span></td>
+                    <td class="nowrap">{{ res.at if res else '-' }}</td>
+                    <td class="nowrap">{{ res.by|who if res else '-' }}</td>
+                </tr>
+                {% endfor %}
+                {% if closed %}
+                <tr><td class="strong">Case</td><td>-</td><td>{{ outcome_badge(s.closed.outcome) }}</td><td>-</td><td>-</td><td>-</td>
+                    <td><span class="ellipsis" title="{{ s.closed.note }}">{{ s.closed.note or '-' }}</span></td><td class="nowrap">{{ s.closed.at }}</td><td class="nowrap">{{ s.closed.by|who }}</td></tr>
+                {% elif not hits %}
+                <tr><td colspan="9"><div class="no-data">{{ icon('list') }}No decision yet</div></td></tr>
+                {% endif %}
+                </tbody>
+            </table>
+            </div>
+        </div>
+    </div>
+</section>
+</div>
+
+{% include "_viewer.html" %}
+{{ modal_open('doc-modal', 'Document Preview', 'lg') }}
+<div class="modal-body">
+    <div class="viewer-stage" id="doc-stage" style="min-height:420px"><img id="doc-modal-img" src="" alt="Document preview">{{ viewer_tools() }}</div>
+    <div class="small muted mt-8"><span id="doc-modal-cap"></span><span class="viewer-hint">Scroll to zoom · drag to move · double-click to zoom in or fit</span></div>
+</div>
+<div class="modal-foot"><span class="spacer"></span><button type="button" class="btn btn-outline btn-sm" onclick="closeModal('doc-modal')">Close</button></div>
+{{ modal_close() }}
+
+{{ modal_open('extract-modal', 'Extracted Infos — ' ~ (s.model.label if s.model else 'no model'), '') }}
+<div class="modal-body">
+    <div class="desc cols-2">
+        <div><span class="l">Document type</span><span class="v">{{ r.document_type or '-' }}</span></div>
+        <div><span class="l">Issuing country</span><span class="v">{{ r.issuing_country or '-' }}</span></div>
+        {% for key, label in fields %}{% if f[key] %}<div><span class="l">{{ label }}</span><span class="v">{{ f[key] }}</span></div>{% endif %}{% endfor %}
+    </div>
+    {% if r.mrz %}<pre class="ocr-mrz mt-8">{{ r.mrz|join('\n') }}</pre>{% endif %}
+    <div class="small muted mt-8">Result: <b>{{ s.verdict }}</b> · read {{ s.at }}</div>
+</div>
+<div class="modal-foot"><span class="spacer"></span><button type="button" class="btn btn-outline btn-sm" onclick="closeModal('extract-modal')">Close</button></div>
+{{ modal_close() }}
+{% endblock %}
+
+{% block extra_js %}
+<script>
+/* Case tabs, as on the KYC case: one panel at a time, the tab in the URL hash. */
+(function () {
+    var tabs = document.querySelectorAll('.case-tabs .tab');
+    function show(name, push) {
+        var found = false;
+        tabs.forEach(function (t) { if (t.dataset.tab === name) { found = true; } });
+        if (!found) { name = 'overview'; }
+        tabs.forEach(function (t) { var on = t.dataset.tab === name; t.classList.toggle('active', on); t.setAttribute('aria-selected', on ? 'true' : 'false'); });
+        document.querySelectorAll('.tab-panel').forEach(function (p) { p.hidden = p.dataset.panel !== name; });
+        if (push) { try { history.replaceState(null, '', location.pathname + location.search + '#' + name); } catch (e) {} }
+    }
+    tabs.forEach(function (t) { t.addEventListener('click', function () { show(t.dataset.tab, true); }); });
+    show((location.hash || '').replace('#', ''), false);
+    window.addEventListener('hashchange', function () { show(location.hash.replace('#', ''), false); });
+})();
+
+function docPreview(src, caption) {
+    var stage = document.getElementById('doc-stage');
+    viewerInit(stage).show(src);
+    document.getElementById('doc-modal-cap').textContent = caption || '';
+    openModal('doc-modal');
+    try { stage.focus({ preventScroll: true }); } catch (e) {}
+}
+</script>
+{% endblock %}

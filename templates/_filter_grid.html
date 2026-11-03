@@ -1,0 +1,76 @@
+{# The 24-field filter block above the case list, laid out three across with
+   the label to the left of each control, as the real list has it. Every
+   control has an id starting f- (the fold summary counts them) and a name
+   without the prefix: the grid sits inside the case list's GET form, so
+   Search (or Enter) filters on the server and the page, the sort and the
+   filters all live in the URL — a live-refresh reload keeps them. #}
+{% set q = query %}
+{% macro opt(value, current, label=None) %}<option value="{{ value }}" {% if current == value %}selected{% endif %}>{{ label or value }}</option>{% endmacro %}
+<div class="fgrid" id="filters-grid">
+    <div class="f"><label for="f-case-id">Case ID</label><input class="input" id="f-case-id" name="case_id" value="{{ q.case_id }}" placeholder="Case ID"></div>
+    <div class="f"><label for="f-client-id">Client ID</label><input class="input" id="f-client-id" name="client_id" value="{{ q.client_id }}" placeholder="Client ID"></div>
+    <div class="f"><label for="f-name">Client Name</label><input class="input" id="f-name" name="name" value="{{ q.name }}" placeholder="Client Name"></div>
+
+    <div class="f"><label>Date Of Birth</label>
+        <div class="range"><input class="input" type="date" id="f-dob-from" name="dob_from" value="{{ q.dob_from }}" title="Start"><span class="dash">-</span><input class="input" type="date" id="f-dob-to" name="dob_to" value="{{ q.dob_to }}" title="End"></div></div>
+    <div class="f"><label>Status</label>
+        <details class="mselect" id="f-status-box">
+            <summary><div class="input input-sm"><span id="f-status-label" class="placeholder">Select status</span>{{ icon('chevron-down') }}</div></summary>
+            <div class="menu">
+                {% for s in filters.statuses %}
+                <label class="check"><input type="checkbox" class="f-status" name="status" value="{{ s }}" {% if s in q.status %}checked{% endif %}> {{ s }}</label>
+                {% endfor %}
+            </div>
+        </details></div>
+    <div class="f"><label>Creation Time</label>
+        <div class="range"><input class="input" type="date" id="f-created-from" name="created_from" value="{{ q.created_from }}" title="Start"><span class="dash">-</span><input class="input" type="date" id="f-created-to" name="created_to" value="{{ q.created_to }}" title="End"></div></div>
+
+    <div class="f"><label for="f-reviewer">Current Reviewer</label>
+        <select class="input" id="f-reviewer" name="reviewer"><option value="">Select</option>{% for r in filters.reviewers %}{{ opt(r, q.reviewer) }}{% endfor %}</select></div>
+    <div class="f"><label for="f-prev">Previous Reviewer</label>
+        <select class="input" id="f-prev" name="prev"><option value="">Select</option>{% for r in filters.reviewers %}{{ opt(r, q.prev) }}{% endfor %}</select></div>
+    <div class="f"><label for="f-source">Source</label>
+        <select class="input" id="f-source" name="source"><option value="">Select</option>{% for s in filters.sources %}{{ opt(s, q.source) }}{% endfor %}</select></div>
+
+    <div class="f"><label>Submit Time</label>
+        <div class="range"><input class="input" type="date" id="f-sub-from" name="sub_from" value="{{ q.sub_from }}" title="Start"><span class="dash">-</span><input class="input" type="date" id="f-sub-to" name="sub_to" value="{{ q.sub_to }}" title="End"></div></div>
+    <div class="f"><label for="f-vendor">Vendor</label>
+        <select class="input" id="f-vendor" name="vendor"><option value="">Select</option>{% for v in filters.vendors %}{{ opt(v, q.vendor) }}{% endfor %}</select></div>
+    <div class="f"><label for="f-gifter">Customer tier</label>
+        <select class="input" id="f-gifter" name="gifter"><option value="">Select</option>{% for t in vocab.TAGS if t.startswith('Tier') %}{{ opt(t, q.gifter) }}{% endfor %}</select></div>
+
+    <div class="f"><label for="f-nat">Nationality</label>
+        <select class="input" id="f-nat" name="nat"><option value="">Select</option>{% for n in filters.issuing %}{{ opt(n, q.nat) }}{% endfor %}</select></div>
+    <div class="f"><label for="f-issuing">ID issuing place</label>
+        <select class="input" id="f-issuing" name="issuing"><option value="">Select</option>{% for n in filters.issuing %}{{ opt(n, q.issuing) }}{% endfor %}</select></div>
+
+    <div class="f"><label for="f-idnum">ID Number</label><input class="input" id="f-idnum" name="idnum" value="{{ q.idnum }}" placeholder="ID Number"></div>
+    <div class="f"><label for="f-tags">Tags</label>
+        <select class="input" id="f-tags" name="tags"><option value="">Select</option>{% for t in filters.tags %}{{ opt(t, q.tags) }}{% endfor %}</select></div>
+    <div class="f"><label for="f-poa">POA is required</label>
+        <select class="input" id="f-poa" name="poa"><option value="">Select</option>{{ opt('Yes', q.poa) }}{{ opt('No', q.poa) }}</select></div>
+
+    <div class="f"><label for="f-level">Case review level</label>
+        <select class="input" id="f-level" name="level"><option value="">Select</option>{% for l in filters.levels %}{{ opt(l, q.level) }}{% endfor %}</select></div>
+    <div class="f"><label for="f-pending">Pending Reason</label>
+        <select class="input" id="f-pending" name="pending"><option value="">Select</option>{% for p in filters.pending %}{{ opt(p, q.pending) }}{% endfor %}</select></div>
+    <div class="f"><label for="f-edd">EDD-RFI</label>
+        <select class="input" id="f-edd" name="edd"><option value="">Select</option>{{ opt('Yes', q.edd) }}{{ opt('No', q.edd) }}</select></div>
+
+    <div class="f"><label for="f-mrr">Manual Review Reason</label>
+        <select class="input" id="f-mrr" name="mrr"><option value="">Select</option>{% for m in filters.mrr %}{{ opt(m, q.mrr) }}{% endfor %}</select></div>
+    <div class="f"><label for="f-qcrev">QC Reviewer</label>
+        <select class="input" id="f-qcrev" name="qcrev"><option value="">Select</option>{% for r in filters.reviewers %}{{ opt(r, q.qcrev) }}{% endfor %}</select></div>
+
+    <div class="f"><label for="f-qcreason">QC Reason</label><input class="input" id="f-qcreason" name="qcreason" value="{{ q.qcreason }}" placeholder="QC Reason"></div>
+    <div class="f"><label for="f-qcresult">QC Result</label>
+        <select class="input" id="f-qcresult" name="qcresult"><option value="">Select</option>{% for x in filters.qc_results %}{{ opt(x, q.qcresult) }}{% endfor %}</select></div>
+    <div class="f"><label for="f-workflow">Review workflow</label>
+        <select class="input" id="f-workflow" name="workflow"><option value="">Select</option>{% for k, label in vocab.REVIEW_WORKFLOWS.items() %}{{ opt(k, q.workflow, label) }}{% endfor %}</select></div>
+    <div class="f"><label for="f-agent">AI Agent</label>
+        <select class="input" id="f-agent" name="agent"><option value="">Select</option>{% for k, label in vocab.AI_AGENT_FILTER.items() %}{{ opt(k, q.agent, label) }}{% endfor %}</select></div>
+    <div class="f"><label for="f-verdict">Claude's verdict</label>
+        <select class="input" id="f-verdict" name="verdict"><option value="">Select</option>{% for k, label in vocab.AI_VERDICT_FILTER.items() %}{{ opt(k, q.verdict, label) }}{% endfor %}</select></div>
+    <div class="f"><label for="f-watch">AI watchlist finding</label>
+        <select class="input" id="f-watch" name="watch"><option value="">Select</option>{% for k, label in vocab.AI_WATCH_FILTER.items() %}{{ opt(k, q.watch, label) }}{% endfor %}</select></div>
+</div>

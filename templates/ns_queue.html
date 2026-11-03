@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+{% from "_badges.html" import outcome_badge %}
+{% from "_modals.html" import modal_open, modal_close %}
+{% from "_pager.html" import pager %}
+{% block title %}Name Screening - Onboarding{% endblock %}
+
+{% block content %}
+<div class="row between mb-12">
+    <div class="segmented">
+        <a class="seg {% if level == 'L1' %}on{% endif %}" href="{{ url_for('ns_queue', level='L1') }}">L1</a>
+        <a class="seg {% if level == 'L2' %}on{% endif %}" href="{{ url_for('ns_queue', level='L2') }}">L2</a>
+    </div>
+    <div class="btn-group">
+        <button type="button" class="btn btn-primary btn-sm" onclick="openModal('usearch')">{{ icon('search') }} Universal Search</button>
+    </div>
+</div>
+
+<div class="row mb-16" style="align-items:stretch">
+    {% for q in queues %}
+    <div class="card" style="min-width:300px">
+        <div class="card-body">
+            <div class="strong mb-8">{{ q.name }}</div>
+            <div class="kv" style="grid-template-columns:1fr">
+                <div><span class="l">Total :</span><span class="v">{{ q.total }}</span></div>
+                <div><span class="l">Pending :</span><span class="v">{{ q.pending }}</span></div>
+                <div><span class="l">Completed :</span><span class="v">{{ q.completed }}</span></div>
+                <div><span class="l">Auto-resolved :</span><span class="v">{{ q.auto_closed }}</span></div>
+                <div><span class="l">Human-in-the-loop :</span><span class="v">{{ q.human }}</span></div>
+            </div>
+            <div class="btn-group mt-12">
+                <a class="btn btn-outline btn-xs {% if mine_only and q.level == level %}btn-primary{% endif %}" href="{{ url_for('ns_queue', level=q.level, mine=1) }}">My Cases</a>
+                <a class="btn btn-outline btn-xs {% if not mine_only and q.level == level %}btn-primary{% endif %}" href="{{ url_for('ns_queue', level=q.level) }}">Total Cases</a>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+
+<div class="card pad-0">
+    <div class="card-head" style="padding-bottom:10px"><div class="card-title">{{ level }} screening cases{% if mine_only %} — mine{% endif %}</div><span class="rowcount">{{ total }} case(s)</span></div>
+    <div class="tbl-scroll"><table class="tbl">
+        <thead><tr><th>Case ID</th><th>Name</th><th>Level</th><th>Status</th><th>Alerts</th><th>Pending</th><th>Assigned to</th><th>Created Date</th><th>Outcome</th><th></th></tr></thead>
+        <tbody>
+        {% for r in rows %}
+        <tr>
+            <td><span class="cell-hex" title="{{ r.id }}">{{ r.id }}</span></td>
+            <td class="strong nowrap">{{ r.screening_info.name }}</td>
+            <td>{{ r.case_level }}</td>
+            <td>{{ outcome_badge(r.status) }}{% if r.auto %} <span class="badge violet" title="closed by the AI screening rules">auto</span>{% endif %}</td>
+            <td class="num">{{ r.alerts|length }}</td>
+            <td class="num">{{ r.pending }}</td>
+            <td class="nowrap">{{ r.assigned_to or '-' }}</td>
+            <td class="nowrap">{{ r.created_at }}</td>
+            <td>{{ r.case_outcome.value if r.case_outcome else '-' }}</td>
+            <td><a class="btn btn-outline btn-xs" href="{{ url_for('ns_case', alert_case_id=r.id) }}">Details</a></td>
+        </tr>
+        {% else %}
+        <tr><td colspan="10"><div class="no-data">{{ icon('search') }}No data</div></td></tr>
+        {% endfor %}
+        </tbody>
+    </table></div>
+    {% if pages.pages > 1 %}
+    <div class="table-foot">
+        <span>{{ first }}&ndash;{{ last }} of {{ total }}</span>
+        {{ pager(pages) }}
+        <span>100 / Page</span>
+    </div>
+    {% endif %}
+</div>
+
+{{ modal_open('usearch', 'Universal Search', 'sm') }}
+<form method="get" action="{{ url_for('ns_search') }}">
+    <div class="modal-body">
+        <div class="field"><input class="input" name="q" placeholder="Search" autofocus></div>
+        <div class="stack small muted">
+            <div>{{ icon('search') }} Search by Merchant UID</div>
+            <div>{{ icon('search') }} Search by Case ID</div>
+            <div>{{ icon('search') }} Search by KYC Case ID or client name</div>
+        </div>
+    </div>
+    <div class="modal-foot"><span class="spacer"></span><button type="submit" class="btn btn-primary btn-sm">Search</button></div>
+</form>
+{{ modal_close() }}
+{% endblock %}

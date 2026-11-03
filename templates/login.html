@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sign in - FinCrime Operations Hub</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body class="auth">
+    <div class="auth-wrap">
+        <div class="auth-card">
+            <div class="auth-card-head">
+                <div class="auth-brand-row">
+                    <img class="auth-brand-logo" src="{{ url_for('static', filename='img/straive-logo.png') }}" alt="Straive">
+                    <span class="bar"></span>
+                </div>
+                <h1>Analyst sign-in</h1>
+                <div class="lead">Pick the analyst profile to work as</div>
+            </div>
+
+            {% if error %}
+            <div class="auth-error">&#9888; {{ error }}</div>
+            {% endif %}
+
+            <form method="post" action="{{ url_for('login') }}">
+                <input type="hidden" name="next" value="{{ next }}">
+                <div class="field">
+                    <label for="analyst">Analyst</label>
+                    {# The value is the login key; the label carries the level and
+                       tenant access so the presenter can pick the right profile
+                       for the beat they are about to show. #}
+                    <select class="input" id="analyst" name="analyst" required>
+                        {% for a in analysts %}
+                        <option value="{{ a.key }}" {% if a.key == selected %}selected{% endif %}>{{ a.name }} &mdash; {{ a.role_label }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="field">
+                    <label for="password">Password</label>
+                    <input class="input" type="password" id="password" name="password"
+                           autocomplete="current-password" placeholder="Enter your password" required autofocus>
+                </div>
+                <button type="submit" class="btn btn-primary btn-block">Sign in</button>
+            </form>
+
+            {% if demo_password %}
+            <div class="auth-hint">
+                Demo password for every profile: <code>{{ demo_password }}</code>
+            </div>
+            <div class="auth-profiles">
+                {% for a in analysts %}
+                <div class="p"><b>{{ a.name }}</b><span>{{ a.email }} &middot; {{ a.role_label }}</span></div>
+                {% endfor %}
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</body>
+</html>

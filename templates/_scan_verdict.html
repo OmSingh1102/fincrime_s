@@ -1,0 +1,1 @@
+{% set tone = {'Pass': 'emerald', 'Check': 'amber', 'Fail': 'rose', 'Not read': 'slate'} %}<span class="badge {{ tone.get(s.verdict, 'slate') }}">{{ {'Pass': 'All checks pass', 'Check': 'Check', 'Fail': 'Failed a check', 'Not read': 'Not read'}.get(s.verdict, s.verdict) }}</span>

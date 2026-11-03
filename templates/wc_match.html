@@ -1,0 +1,173 @@
+{% extends "wc_base.html" %}
+{% from "_badges.html" import type_badges, outcome_badge %}
+{% block title %}{{ m.name }} - Matching record{% endblock %}
+
+{% block content %}
+{% set r = m.resolution %}
+{% set kd = m.key_data %}
+{% set fi = m.further_info %}
+<div class="row between">
+    <a class="wc-back" href="{{ back_url }}">{{ icon('chevron-left') }} Back to Case Manager</a>
+    <div class="wc-toolbar">
+        <form method="post" action="{{ url_for('wc_export', wc_case_id=wc.id) }}" style="margin:0"><button type="submit" class="btn">{{ icon('download') }} Export</button></form>
+        <a class="btn" href="{{ url_for('wc_case', wc_case_id=wc.id, tab='audit') }}">{{ icon('activity') }} Activity</a>
+    </div>
+</div>
+
+<div class="wc-case-head">
+    <span class="who">{{ icon('user') }} {{ wc.primary_name }}</span>
+    <div class="kv">
+        <div><span class="l">Case Rating</span><span class="v">{{ wc.rating }}</span></div>
+        <div><span class="l">Case ID</span><span class="v mono">{{ wc.id }}</span></div>
+        <div><span class="l">Group</span><span class="v">{{ wc.group }}</span></div>
+        <div><span class="l">Assignee</span><span class="v">{{ wc.assignee }}</span></div>
+        <div><span class="l">Case Last Updated</span><span class="v">{{ wc.last_updated|wc_dt }}</span></div>
+        <div><span class="l">Ongoing Screening</span><span class="v">{{ wc.ongoing_screening }}</span></div>
+    </div>
+</div>
+
+<div class="wc-tabs">
+    <a class="wc-tab" href="{{ url_for('wc_case', wc_case_id=wc.id, tab='summary') }}">{{ icon('list') }} Summary</a>
+    <a class="wc-tab active" href="{{ url_for('wc_case', wc_case_id=wc.id) }}">{{ icon('globe') }} World-Check {% if unresolved %}<span class="n">{{ unresolved }}</span>{% endif %}</a>
+    <a class="wc-tab" href="{{ url_for('wc_case', wc_case_id=wc.id, tab='audit') }}">{{ icon('clipboard') }} Audit</a>
+</div>
+
+<div class="wc-body two">
+    <aside class="wc-panel">
+        <h4>Case details</h4>
+        <div class="kv">
+            <div><span class="l">Primary Name</span><span class="v">{{ wc.primary_name }}</span></div>
+            <div><span class="l">Gender</span><span class="v">{{ wc.gender }}</span></div>
+            <div><span class="l">Date of Birth</span><span class="v">{{ (wc.dob ~ ' 00:00:00')|wc_date if wc.dob else '-' }}</span></div>
+            {% for k, v in wc.case_details.items() %}<div><span class="l">{{ k }}</span><span class="v">{{ v }}</span></div>{% endfor %}
+        </div>
+    </aside>
+
+    <section>
+        <div class="row between mb-8">
+            <div class="row">
+                <a class="wc-back" href="{{ url_for('wc_case', wc_case_id=wc.id, status=status, type=mtype) }}">{{ icon('chevron-left') }} Back to Matches</a>
+                <span class="small">Matching World-Check Record</span>
+                <span class="pager">
+                    <a href="{{ url_for('wc_match', wc_case_id=wc.id, match_id=nav.prev, status=status, type=mtype) if nav.prev else '#' }}" class="{% if not nav.prev %}dis{% endif %}">&lsaquo;</a>
+                    <span class="on">{{ nav.index }}</span>
+                    <a href="{{ url_for('wc_match', wc_case_id=wc.id, match_id=nav.next, status=status, type=mtype) if nav.next else '#' }}" class="{% if not nav.next %}dis{% endif %}">&rsaquo;</a>
+                </span>
+                <span class="small">of {{ nav.total }}</span>
+            </div>
+        </div>
+
+        <div class="wc-res-panel">
+            <div class="wc-panel">
+                <h4>Current status</h4>
+                <div class="kv">
+                    <div><span class="l">Resolution Status</span><span class="v">{{ r.status }}</span></div>
+                    <div><span class="l">Risk Level</span><span class="v">{{ r.risk or '' }}</span></div>
+                    <div><span class="l">Reason</span><span class="v">{{ r.reason or '' }}</span></div>
+                    <div><span class="l">Resolution Remark</span><span class="v">{{ r.remark or '' }}</span></div>
+                    <div><span class="l">Review Comment</span><span class="v">{{ r.comment or '' }}</span></div>
+                    <div><span class="l">Last Updated</span><span class="v">{{ r.at|wc_dt if r.at else '' }}{% if r.by %} · {{ r.by }}{% endif %}{% if r.by == vocab.SYSTEM_USER %} <span class="badge violet">AI screening rule</span>{% endif %}</span></div>
+                </div>
+            </div>
+            <div class="wc-panel">
+                <div class="row" style="margin-bottom:8px"><span class="wc-subtab active" style="cursor:default">Resolution</span></div>
+                <form method="post" action="{{ url_for('wc_resolve', wc_case_id=wc.id, match_id=m.id) }}">
+                    <input type="hidden" name="status_filter" value="{{ status }}"><input type="hidden" name="type_filter" value="{{ mtype }}">
+                    <div class="opts">
+                        <div><h5>Status</h5>{% for s in (wc_statuses or vocab.WC_STATUSES) %}<label><input type="radio" name="status" value="{{ s }}" {% if r.status == s %}checked{% endif %} required>{{ s }}</label>{% endfor %}</div>
+                        <div><h5>Risk level</h5>{% for s in vocab.WC_RISKS %}<label><input type="radio" name="risk" value="{{ s }}" {% if r.risk == s %}checked{% endif %}>{{ s }}</label>{% endfor %}</div>
+                        <div><h5>Reason</h5>
+                            <select class="input input-sm" name="reason"><option value="">Select a Reason</option>{% for s in vocab.WC_REASONS %}<option {% if r.reason == s %}selected{% endif %}>{{ s }}</option>{% endfor %}</select>
+                            <textarea class="textarea mt-8" name="comment" rows="3" placeholder="Review comment (required)" required>{{ r.comment if r.by != vocab.SYSTEM_USER else '' }}</textarea>
+                            <button type="submit" class="btn btn-sm mt-8" style="background:#3a3f4a;color:#fff;border:1px solid #4a5060" {% if not can_resolve %}disabled title="{{ resolve_hint or 'Handle the screening case first' }}"{% endif %}>Resolve</button>
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        {% if m.ai is defined %}
+        {% set ai = m.ai %}
+        <div class="wc-panel mt-12" id="wc-ai">
+            <h4>AI suggestion <span class="tiny muted" style="text-transform:none;letter-spacing:0;font-weight:400">· a suggestion under the screening SOP; the analyst resolves</span></h4>
+            {% if ai.status == 'pending' %}
+                <div class="small"><span class="spin"></span> The AI is reviewing this match under the screening SOP, with the resolved cases most like it… <span class="muted">this page refreshes when it answers</span></div>
+            {% elif ai.status == 'failed' %}
+                <div class="small"><b>The AI gave no decision.</b> {{ ai.error }}</div>
+            {% elif ai.status == 'done' %}
+                <div class="row between">
+                    <div>{{ outcome_badge(ai.suggested_wc) }} <span class="small strong">{{ ai.label }}</span>{% if ai.confidence is not none %} <span class="tiny muted">· confidence {{ ai.confidence }}%</span>{% endif %}</div>
+                    <div class="tiny muted">{{ ai.model_label }} · SOP {{ ai.sop }} · {{ ai.examples|length }} example case{{ 's' if ai.examples|length != 1 }}{% if ai.at %} · {{ ai.at }}{% endif %}</div>
+                </div>
+                {% if ai.dob_finding %}<div class="small mt-8"><span class="muted">Date of birth:</span> {{ ai.dob_finding }}</div>{% endif %}
+                {% if ai.reasons %}<ul class="small screen-reasons">{% for x in ai.reasons %}<li>{{ x }}</li>{% endfor %}</ul>{% endif %}
+                {% if ai.request %}<div class="small"><span class="muted">Ask the customer for:</span> <b>{{ ai.request }}</b></div>{% endif %}
+                {% if ai.name_variance or ai.address_variance %}<div class="tiny muted mt-8">Name discrepancy: {{ ai.name_variance or '—' }} · address discrepancy: {{ ai.address_variance or '—' }}</div>{% endif %}
+            {% else %}
+                <div class="small muted">Not sent to the AI.</div>
+            {% endif %}
+            {% if case_open and r.status == 'Unresolved' and ai.status != 'pending' %}
+            <form method="post" action="{{ url_for('scan_hit_ai', scan_id=wc.id, uid=m.id) }}" style="margin:0">
+                <input type="hidden" name="back" value="wc">
+                <button type="submit" class="btn btn-sm mt-8" style="background:#2a2e37;color:#e6e8ec;border:1px solid #3a3f4a">{{ icon('refresh-cw') }} Ask the AI again</button></form>
+            {% endif %}
+        </div>
+        {% endif %}
+
+        <div class="wc-panel mt-12">
+            <h4>Comparison data <span class="strength" style="float:right;width:80px"><i style="width:{{ (m.strength * 100)|round|int }}%"></i></span></h4>
+            <table class="wc-compare">
+                <thead><tr><th></th><th>Submitted Data</th><th>Matched Data</th></tr></thead>
+                <tbody>
+                {% for row in comparison %}
+                <tr class="{% if row.match %}match{% endif %}"><td class="k">{{ row.field }}</td><td>{% if row.match %}<span class="tone-ok">&#10003;</span> {% endif %}{{ row.submitted }}</td><td>{{ row.matched }}</td></tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <div class="wc-subtabs mt-12">
+            {% for name, label in [('key', 'Key data'), ('further', 'Further information'), ('aliases', 'Aliases'), ('keywords', 'Keywords'), ('pep', 'PEP role details'), ('connections', 'Connections / relationships'), ('sources', 'Sources')] %}
+            <span class="wc-subtab {% if loop.first %}active{% endif %}" data-pane="{{ name }}" onclick="wcTab('{{ name }}')">{{ label }}</span>
+            {% endfor %}
+        </div>
+
+        <div class="wc-pane show" data-pane="key">
+            <div class="row between mb-8"><span class="small strong">KEY DATA {{ type_badges(m.types) }}</span><span class="small muted">World-Check ID: {{ m.wc_id }}</span></div>
+            <table class="wc-compare"><tbody>
+                <tr><td class="k">Name</td><td>{{ m.name }}</td></tr>
+                <tr><td class="k">Record Update</td><td>Update Categorization <span class="badge blue">C6</span><br>Entered Date &nbsp; {{ (m.entered ~ ' 00:00:00')|wc_date }}<br>Updated Date &nbsp; {{ (m.updated ~ ' 00:00:00')|wc_date }}</td></tr>
+                <tr><td class="k">Category</td><td>{{ kd.category }}</td></tr>
+                {% if kd.sub_category %}<tr><td class="k">Sub-Category</td><td><span class="badge blue">{{ kd.sub_category }}</span></td></tr>{% endif %}
+                {% if kd.pep_status %}<tr><td class="k">PEP Status</td><td>{{ kd.pep_status }}</td></tr>{% endif %}
+                {% if kd.special_interest %}<tr><td class="k">Special Interest Categories</td><td>{% for s in kd.special_interest %}<span class="badge blue" style="display:inline-block;margin:1px 2px 1px 0">{{ s }}</span>{% endfor %}</td></tr>{% endif %}
+                <tr><td class="k">Gender</td><td>{{ m.gender|upper }}</td></tr>
+                <tr><td class="k">Citizenship</td><td>{{ m.citizenship }}</td></tr>
+                {% if kd.location %}<tr><td class="k">Location Details</td><td>
+                    <table class="wc-compare"><thead><tr><th>Street</th><th>City</th><th>Region</th><th>Country</th><th>Postcode</th></tr></thead>
+                    <tbody>{% for loc in kd.locations or [kd.location] %}<tr><td>{{ loc.street }}</td><td>{{ loc.city }}</td><td>{{ loc.region }}</td><td>{{ loc.country }}</td><td>{{ loc.postcode }}</td></tr>{% endfor %}</tbody></table></td></tr>{% endif %}
+                <tr><td class="k">Title</td><td></td></tr>
+                <tr><td class="k">Position</td><td>{{ kd.position }}</td></tr>
+            </tbody></table>
+        </div>
+        <div class="wc-pane" data-pane="further">
+            <div class="row mb-8"><span class="small strong">FURTHER INFORMATION</span></div>
+            <h4>Biography</h4><p class="small mb-12">{{ fi.biography or '—' }}</p>
+            <h4>Identification</h4><p class="small mb-12">{% if fi.identification %}<span class="badge blue">{{ fi.identification }}</span>{% else %}—{% endif %}</p>
+            <h4>Reports</h4>{% for d, text in fi.reports %}<p class="small mb-8"><b>{{ d }}:</b> {{ text }}</p>{% else %}<p class="small muted">—</p>{% endfor %}
+        </div>
+        <div class="wc-pane" data-pane="aliases"><h4>Aliases</h4>{% for a in m.aliases %}<div class="small">{{ a }}</div>{% else %}<div class="no-data">No aliases recorded.</div>{% endfor %}</div>
+        <div class="wc-pane" data-pane="keywords"><h4>Keywords</h4>{% for k in (m.keywords or kd.special_interest) %}<span class="badge blue" style="margin:2px">{{ k }}</span>{% else %}<div class="no-data">No keywords.</div>{% endfor %}</div>
+        <div class="wc-pane" data-pane="pep"><h4>PEP role details</h4>{% if kd.pep_status %}<table class="wc-compare"><tbody><tr><td class="k">Position</td><td>{{ kd.position }}</td></tr><tr><td class="k">Status</td><td>{{ kd.pep_status }}</td></tr><tr><td class="k">Sub-Category</td><td>{{ kd.sub_category }}</td></tr></tbody></table>{% else %}<div class="no-data">Not a PEP record.</div>{% endif %}</div>
+        <div class="wc-pane" data-pane="connections"><div class="no-data">No connections or relationships recorded.</div></div>
+        <div class="wc-pane" data-pane="sources">
+            <div class="row between mb-8"><span class="small strong">SOURCES</span><span class="small muted">World-Check ID: {{ m.wc_id }}</span></div>
+            <table class="wc-compare"><thead><tr><th>Date Added</th><th>Source</th></tr></thead>
+                <tbody>{% for d, u in m.sources %}<tr><td class="k">{{ d }}</td><td title="Fictional source — the demo's records do not resolve">{{ u }}</td></tr>
+                {% else %}<tr><td colspan="2"><div class="no-data">No sources recorded.</div></td></tr>{% endfor %}</tbody></table>
+        </div>
+
+        <div class="wc-legal"><b>Legal notice.</b> This console and every record in it are a simulation built for a demonstration. Names, identifiers, biographies, reports and source links are fictional and were generated from the demo's own seed data; none describes a real person, organisation or publication. In a production console the contents of a record are confidential, must be independently verified before any action is taken, and must not be used to draw inferences about a person merely because a record with a similar name exists.</div>
+    </section>
+</div>
+{% endblock %}

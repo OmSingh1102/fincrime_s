@@ -1,0 +1,37 @@
+{% from "_modals.html" import modal_open, modal_close %}
+{{ modal_open('alert-outcome', 'Change Alert Outcome', '') }}
+<form method="post" action="{{ url_for('ns_alert_outcome', alert_case_id=alert.id) }}">
+    <div id="ao-alert-ids"></div>{# one hidden alert_id per ticked row, filled by the page script #}
+    <div class="modal-body">
+        <div class="field inline"><label>Review Mode</label>
+            <div class="radio-row">
+                <label class="check"><input type="radio" name="review_mode" value="Smart Review"> Smart Review</label>
+                <label class="check"><input type="radio" name="review_mode" value="Manual Review" checked> Manual Review</label>
+            </div></div>
+        <div class="field inline"><label>Alert ID</label><div class="mono small" id="ao-alert-label">—</div></div>
+        <div class="small muted mb-8" id="ao-multi" style="display:none"></div>
+        <div class="note info small mb-8" id="ao-ai" style="display:none"></div>
+        <div class="field inline"><label><span class="req">*</span>Outcome</label>
+            <select class="input" name="outcome_display" disabled><option>Set by Result Label</option></select></div>
+        <div class="field inline"><label><span class="req">*</span>Result Label</label>
+            <select class="input" name="result_label" id="ao-label" required>
+                <option value="">Select</option>{% for l in vocab.RESULT_LABELS %}<option>{{ l }}</option>{% endfor %}</select></div>
+        <div class="field inline"><label>Rationale</label>
+            <select class="input" name="rationale" id="ao-rationale" required>
+                <option value="">Select</option>{% for r in vocab.RATIONALES %}<option>{{ r }}</option>{% endfor %}</select></div>
+        <div class="field inline"><label><span class="req">*</span>Comment</label>
+            <div><textarea class="textarea" name="comment" maxlength="10000" required oninput="document.getElementById('ao-count').textContent=this.value.length"></textarea><div class="counter"><span id="ao-count">0</span>/10000</div></div></div>
+        <div class="field inline"><label><span class="req">*</span>RiskLevel</label>
+            <select class="input" name="risk_level" id="ao-risk" required>
+                <option value="">Please select result label first</option>{% for r in vocab.RISK_LEVELS %}<option>{{ r }}</option>{% endfor %}</select></div>
+        <div class="field inline"><label>Attachment</label>
+            <div><label class="btn btn-primary btn-sm" style="cursor:pointer">{{ icon('upload') }} Upload File<input type="file" style="display:none" onchange="document.getElementById('ao-attach').value=this.files[0]?this.files[0].name:'';document.getElementById('ao-fname').textContent=this.files[0]?this.files[0].name:''"></label>
+                <input type="hidden" name="attachment" id="ao-attach"><span class="small" id="ao-fname"></span>
+                <div class="tiny muted">Supported format: pdf, xlsx, csv, jpg, jpeg, gif, png, docx, txt</div></div></div>
+        <div class="small muted">The prefilled label, rationale and risk come from the resolution recorded in the watchlist console. <a id="ao-wc-link" data-base="{{ url_for('wc_case', wc_case_id=alert.id) }}/match/" href="#" target="_blank" rel="noopener" title="Opens in a new tab">Review it there<span class="ext-ic">{{ icon('external-link') }}</span></a> before confirming.</div>
+    </div>
+    <div class="modal-foot"><span class="spacer"></span>
+        <button type="button" class="btn btn-outline btn-sm" onclick="closeModal('alert-outcome')">Cancel</button>
+        <button type="submit" class="btn btn-primary btn-sm">OK</button></div>
+</form>
+{{ modal_close() }}

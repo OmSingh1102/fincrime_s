@@ -1,0 +1,27 @@
+{# L2 / EDD decision on an escalated case. The level is decided server-side
+   from the pending reason; the segregation check refuses an analyst who
+   already touched the case at an earlier level. #}
+{% from "_modals.html" import modal_open, modal_close %}
+
+{{ modal_open('l2-modal', l2_level ~ ' Decision', 'sm') }}
+<form method="post" action="{{ url_for('kyc_l2_decision', case_id=case.id) }}">
+    <div class="modal-body">
+        {% if segregated %}
+        <div class="note bad mb-12">You reviewed this case at an earlier level. Segregation of duties means another analyst must decide it.</div>
+        {% endif %}
+        {% if alert and alert.case_outcome %}
+        <div class="note info mb-12">Screening outcome: <b>{{ alert.case_outcome.value }}</b> — {{ alert.case_outcome.comment }}</div>
+        {% endif %}
+        <div class="field"><label><span class="req">*</span>Decision</label>
+            <select class="input" name="decision" required>
+                {% for d in vocab.L2_DECISIONS if not (l2_level == 'EDD' and d == 'Escalate to EDD') %}<option>{{ d }}</option>{% endfor %}
+            </select></div>
+        <div class="field"><label><span class="req">*</span>Comment</label>
+            <textarea class="textarea" name="comment" required placeholder="Approve: the basis for onboarding. Reject: the finding. EDD: what must be established."></textarea></div>
+        <div class="small muted">{% if l2_level == 'L2' %}Escalate to EDD keeps the 14-day clock and moves the case to the EDD analyst.{% else %}EDD is the final level for this case.{% endif %}</div>
+    </div>
+    <div class="modal-foot"><span class="spacer"></span>
+        <button type="button" class="btn btn-outline btn-sm" onclick="closeModal('l2-modal')">Cancel</button>
+        <button type="submit" class="btn btn-primary btn-sm" {% if segregated %}disabled{% endif %}>OK</button></div>
+</form>
+{{ modal_close() }}

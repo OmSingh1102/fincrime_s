@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% from "_badges.html" import status_badge %}
+{% block title %}Audit History - {{ case.client.legal_name }}{% endblock %}
+
+{% block content %}
+<div class="crumbs"><a href="{{ url_for('kyc_list') }}">Case List</a><span class="sep">/</span><a href="{{ url_for('kyc_detail', case_id=case.id) }}">{{ case.id }}</a><span class="sep">/</span>{{ 'Change Log' if view == 'changes' else 'Audit History' }}</div>
+<div class="page-head">
+    <div><h2>{{ case.client.legal_name }} {{ status_badge(case.status) }}</h2><p>Every action on this case, in order, with who took it. Nothing here is written on an analyst's behalf; the router and the AI screening rules sign their own rows.</p></div>
+    <a class="btn btn-outline btn-sm" href="{{ url_for('kyc_detail', case_id=case.id) }}">{{ icon('arrow-left') }} Back to case</a>
+</div>
+
+<div class="tabs">
+    <a class="tab {% if view != 'changes' %}active{% endif %}" href="{{ url_for('kyc_audit', case_id=case.id) }}">Audit History <span class="n">{{ case.audit|length }}</span></a>
+    <a class="tab {% if view == 'changes' %}active{% endif %}" href="{{ url_for('kyc_audit', case_id=case.id, view='changes') }}">Change Log <span class="n">{{ case.change_log|length }}</span></a>
+</div>
+
+<div class="card"><div class="card-body">
+{% if view == 'changes' %}
+    {% if case.change_log %}
+    <table class="tbl">
+        <thead><tr><th>When</th><th>By</th><th>Field</th><th>From</th><th>To</th></tr></thead>
+        <tbody>{% for c in case.change_log|reverse %}
+        <tr><td class="nowrap">{{ c.at }}</td><td>{{ c.by }}</td><td class="strong">{{ c.field }}</td><td>{{ c.from or '-' }}</td><td>{{ c.to or '-' }}</td></tr>
+        {% endfor %}</tbody>
+    </table>
+    {% else %}<div class="no-data">{{ icon('list') }}No field on this case has been changed.</div>{% endif %}
+{% else %}
+    <div class="timeline">
+        {% for e in case.audit|reverse %}
+        <div class="timeline-item">
+            <div class="event-name">{{ e.action }}</div>
+            <div class="event-meta">{{ e.at }} · {{ e.actor }}</div>
+            {% if e.detail %}<div class="event-body">{{ e.detail }}</div>{% endif %}
+        </div>
+        {% endfor %}
+    </div>
+{% endif %}
+</div></div>
+{% endblock %}

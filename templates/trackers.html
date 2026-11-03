@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}Trackers{% endblock %}
+
+{% block content %}
+<div class="page-head">
+    <div><h2>Trackers — {{ tenants[tenant].label }}</h2>
+        <p>The SOP's Google Sheets, filled by the system (SOP 5.2.1: centralised tracking replaces the external trackers). Nobody types into a tracker; every cell comes from the case record, and the CSV is there for anyone downstream who still wants a sheet.</p></div>
+    <a class="btn btn-outline btn-sm" href="{{ url_for('trackers', view=vm.view, format='csv') }}">{{ icon('download') }} Download CSV</a>
+</div>
+
+<div class="tabs">
+    {% for key, label in vm.views %}<a class="tab {% if key == vm.view %}active{% endif %}" href="{{ url_for('trackers', view=key) }}">{{ label }}</a>{% endfor %}
+</div>
+
+<div class="card pad-0">
+    <div class="card-head" style="padding-bottom:10px"><div><div class="card-title">{{ vm.title }}</div><div class="card-sub">{{ vm.subtitle }}</div></div><span class="rowcount">{{ vm.rows|length }} row(s)</span></div>
+    <div class="tbl-scroll">
+        <table class="tbl dense">
+            <thead><tr>{% for col in vm.columns %}<th>{{ col }}</th>{% endfor %}<th></th></tr></thead>
+            <tbody>
+            {% for r in vm.rows %}
+            <tr>
+                {% for cell in r.cells %}
+                <td class="nowrap">{% if loop.index0 == vm.file_col and r.file %}<a href="{{ url_for('kyc_file', case_id=r.case_id) }}">{{ cell }}</a>{% else %}{{ cell }}{% endif %}</td>
+                {% endfor %}
+                <td><a class="btn btn-outline btn-xs" href="{{ url_for('kyc_detail', case_id=r.case_id) }}">Open</a></td>
+            </tr>
+            {% else %}
+            <tr><td colspan="{{ vm.columns|length + 1 }}"><div class="no-data">{{ icon('list') }}Nothing to track yet.</div></td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

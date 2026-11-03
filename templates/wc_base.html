@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Watchlist console (simulated){% endblock %}</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    {% block extra_css %}{% endblock %}
+</head>
+{# The dark shell of the simulated watchlist console. Same components as the
+   Compliance shell; body.wc-theme re-points the colour tokens. #}
+<body class="wc-theme">
+<header class="wc-topbar">
+    <div class="row1">
+        <span class="product">World-Check console <span class="sim">simulated</span></span>
+        <a class="wc-back" href="{{ back_url }}" title="Back to the screening case">{{ icon('home') }}</a>
+        <form class="wc-search" method="get" action="{{ url_for('ns_search') }}"><input class="input" name="q" placeholder="Search for record id"></form>
+        <span class="user"><span class="av">{{ user_initials }}</span>{{ session.name }}</span>
+    </div>
+    <div class="row2">
+        <span class="on">Case Manager</span>
+    </div>
+</header>
+<main class="wc-main">
+    {% include "_flashes.html" %}
+    {% block content %}{% endblock %}
+</main>
+{% include "_live_refresh.html" %}
+<script>
+function openModal(id) { var el = document.getElementById(id); if (el) { el.classList.add('show'); } }
+function closeModal(id) { var el = document.getElementById(id); if (el) { el.classList.remove('show'); } }
+function wcTab(name) {
+    document.querySelectorAll('.wc-pane').forEach(function (p) { p.classList.toggle('show', p.dataset.pane === name); });
+    document.querySelectorAll('.wc-subtab').forEach(function (t) { t.classList.toggle('active', t.dataset.pane === name); });
+}
+</script>
+{% block extra_js %}{% endblock %}
+</body>
+</html>

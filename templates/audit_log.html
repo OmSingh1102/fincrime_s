@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block title %}Audit Log{% endblock %}
+
+{% block content %}
+<div class="page-head">
+    <div><h2>Audit log — {{ tenants[tenant].label }}</h2>
+        <p>Every action on every KYC, screening and World-Check record, in one stream (SOP 5.2.4: audit logs within a single platform). Nothing here is written on an analyst's behalf; the router and the AI screening rules sign their own rows.</p></div>
+    <a class="btn btn-outline btn-sm" href="{{ url_for('audit_log', format='csv') }}">{{ icon('download') }} Download CSV</a>
+</div>
+
+<div class="card"><div class="card-body">
+    <div class="row" style="gap:8px;flex-wrap:wrap">
+        <select class="input input-sm" id="al-kind" style="width:auto" onchange="alFilter()" aria-label="Record type"><option value="">All records</option>{% for k, label in vm.filters.kinds %}<option value="{{ k }}">{{ label }}</option>{% endfor %}</select>
+        <select class="input input-sm" id="al-actor" style="width:auto" onchange="alFilter()" aria-label="Actor"><option value="">All actors</option>{% for a in vm.filters.actors %}<option>{{ a }}</option>{% endfor %}</select>
+        <select class="input input-sm" id="al-action" style="width:auto" onchange="alFilter()" aria-label="Action"><option value="">All actions</option>{% for a in vm.filters.actions %}<option>{{ a }}</option>{% endfor %}</select>
+        <input class="input input-sm" id="al-text" style="width:260px" placeholder="Search detail, name or id" oninput="alFilter()" aria-label="Search">
+        <button type="button" class="btn btn-outline btn-sm" onclick="alClear()">Clear</button>
+    </div>
+</div></div>
+
+<div class="card mt-12 pad-0">
+    <div class="tbl-scroll"><table class="tbl dense" id="al-table">
+        <thead><tr><th>When</th><th>Actor</th><th>Record</th><th>Name</th><th>Action</th><th>Detail</th></tr></thead>
+        <tbody>
+        {% for r in vm.rows %}
+        <tr data-kind="{{ r.kind }}" data-actor="{{ r.actor_name }}" data-action="{{ r.action }}" data-text="{{ (r.label ~ ' ' ~ r.record_id ~ ' ' ~ r.detail ~ ' ' ~ r.actor_name)|lower }}">
+            <td class="nowrap">{{ r.at }}</td>
+            <td class="nowrap">{{ r.actor_name }}</td>
+            <td class="nowrap"><a href="{{ url_for(r.endpoint, **r.args) }}"{% if r.kind == 'wc' %} target="_blank" rel="noopener" title="Opens in a new tab"{% endif %}>{{ r.kind_label }}{% if r.kind == 'wc' %}<span class="ext-ic">{{ icon('external-link') }}</span>{% endif %}</a><br><span class="tiny muted mono">{{ r.record_id[:19] }}</span></td>
+            <td class="strong nowrap">{{ r.label }}</td>
+            <td class="nowrap">{{ r.action }}</td>
+            <td><span class="ellipsis" title="{{ r.detail }}" style="max-width:520px">{{ r.detail }}</span></td>
+        </tr>
+        {% else %}<tr><td colspan="6"><div class="no-data">{{ icon('book') }}No events yet.</div></td></tr>{% endfor %}
+        </tbody>
+    </table></div>
+    <div class="table-foot"><span>Showing <b id="al-shown">{{ vm.shown }}</b> of {{ vm.total }} events{% if vm.total > vm.shown %} (newest {{ vm.shown }}; download the CSV for all){% endif %}</span></div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function () {
+    var rows = Array.prototype.slice.call(document.querySelectorAll('#al-table tbody tr[data-kind]'));
+    var v = function (id) { return (document.getElementById(id).value || '').trim(); };
+    window.alFilter = function () {
+        var kind = v('al-kind'), actor = v('al-actor'), action = v('al-action'), text = v('al-text').toLowerCase(), shown = 0;
+        rows.forEach(function (r) {
+            var d = r.dataset;
+            var ok = (!kind || d.kind === kind) && (!actor || d.actor === actor) && (!action || d.action === action) && (!text || d.text.indexOf(text) >= 0);
+            r.classList.toggle('hidden', !ok);
+            if (ok) { shown += 1; }
+        });
+        document.getElementById('al-shown').textContent = shown;
+    };
+    window.alClear = function () {
+        ['al-kind', 'al-actor', 'al-action', 'al-text'].forEach(function (id) { document.getElementById(id).value = ''; });
+        alFilter();
+    };
+})();
+</script>
+{% endblock %}

@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% from "_badges.html" import status_badge, outcome_badge %}
+{% from "_modals.html" import modal_open, modal_close %}
+{% block title %}QC Sampling{% endblock %}
+
+{% block content %}
+<div class="page-head">
+    <div><h2>QC sampling — {{ tenants[tenant].label }}</h2>
+        <p>Today's random sample of closed cases ({{ day }}), drawn by the system: {{ (vocab.QC_SAMPLE_RATE * 100)|int }}% of the closed book, at least {{ vocab.QC_SAMPLE_MIN }} (SOP 2.1: periodic sampling of closed L1 and escalation cases). Pass or fail each with a reason; a fail lands on the closing analyst's My Work page as feedback.</p></div>
+    <div class="row"><span class="badge {{ 'amber' if pending else 'emerald' }}">{{ pending }} to review</span></div>
+</div>
+
+<div class="card pad-0">
+    <div class="card-head" style="padding-bottom:10px"><div class="card-title">Today's sample</div><div class="card-sub">the same {{ sample|length }} case(s) all day, on every screen</div></div>
+    <table class="tbl">
+        <thead><tr><th>Case ID</th><th>Client</th><th>Outcome</th><th>Closed</th><th>Closed by</th><th>Escalated</th><th>QC result</th><th></th></tr></thead>
+        <tbody>
+        {% for r in sample %}{% set c = r.case %}
+        <tr>
+            <td class="cell-id">{{ c.id }}</td>
+            <td class="strong nowrap">{{ c.client.legal_name }}</td>
+            <td>{{ status_badge(c.status) }}</td>
+            <td class="nowrap">{{ c.closed_at }}</td>
+            <td class="nowrap">{{ c.closed_by|who }}</td>
+            <td>{{ 'Yes' if c.escalated_at else 'No' }}</td>
+            <td>{% if c.qc_result %}{{ outcome_badge(c.qc_result) }} <span class="small muted">{{ c.qc_reason }}</span>{% else %}<span class="muted">not reviewed</span>{% endif %}</td>
+            <td class="btn-group tight">
+                <a class="btn btn-outline btn-xs" href="{{ url_for('kyc_detail', case_id=c.id) }}">Open</a>
+                <a class="btn btn-outline btn-xs" href="{{ url_for('kyc_audit', case_id=c.id) }}">Audit</a>
+                {% if not c.qc_result %}<button type="button" class="btn btn-primary btn-xs" onclick='qcReview({{ c.id|tojson }}, {{ c.client.legal_name|tojson }})'>Review</button>{% endif %}
+            </td>
+        </tr>
+        {% else %}<tr><td colspan="8"><div class="no-data">{{ icon('shield-check') }}No closed case to sample yet.</div></td></tr>{% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<div class="card mt-12 pad-0">
+    <div class="card-head" style="padding-bottom:10px"><div class="card-title">Quality scorecard</div><div class="card-sub">per closing analyst, every QC review to date — the coaching conversation starts here</div></div>
+    <table class="tbl">
+        <thead><tr><th>Analyst</th><th class="num">Sampled</th><th class="num">Pass</th><th class="num">Fail</th><th>Pass rate</th><th>Top fail reasons</th></tr></thead>
+        <tbody>
+        {% for s in scorecard %}
+        <tr>
+            <td class="strong nowrap">{{ s.name }}</td>
+            <td class="num">{{ s.sampled }}</td><td class="num">{{ s.passed }}</td><td class="num">{{ s.failed }}</td>
+            <td style="min-width:180px"><div class="row" style="gap:8px"><span class="tabular">{{ s.pass_rate }}%</span><span class="cap-bar" style="flex:1;margin:0;max-width:140px" title="{{ s.passed }} of {{ s.sampled }} passed"><i style="width:{{ s.pass_rate }}%"></i></span></div></td>
+            <td>{{ s.top_reasons|join('; ') or '-' }}</td>
+        </tr>
+        {% else %}<tr><td colspan="6"><div class="no-data">No QC review recorded yet.</div></td></tr>{% endfor %}
+        </tbody>
+    </table>
+</div>
+
+{{ modal_open('qc-modal', 'QC Review', 'sm') }}
+<form method="post" id="qc-form" action="">
+    <div class="modal-body">
+        <div class="small muted mb-8" id="qc-who"></div>
+        <div class="field"><label><span class="req">*</span>Result</label>
+            <select class="input" name="result" required><option>Pass</option><option>Fail</option></select></div>
+        <div class="field"><label><span class="req">*</span>Reason</label>
+            <select class="input" name="reason" required>{% for r in vocab.QC_REASONS %}<option>{{ r }}</option>{% endfor %}</select></div>
+        <div class="field"><label><span class="req">*</span>Comment</label>
+            <textarea class="textarea" name="comment" required placeholder="What the analyst did well, or what to do differently next time."></textarea></div>
+    </div>
+    <div class="modal-foot"><span class="spacer"></span>
+        <button type="button" class="btn btn-outline btn-sm" onclick="closeModal('qc-modal')">Cancel</button>
+        <button type="submit" class="btn btn-primary btn-sm">Record</button></div>
+</form>
+{{ modal_close() }}
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function qcReview(id, name) {
+    document.getElementById('qc-form').action = '/kyc/' + id + '/qc_review';
+    document.getElementById('qc-who').textContent = name + ' · ' + id;
+    openModal('qc-modal');
+}
+</script>
+{% endblock %}

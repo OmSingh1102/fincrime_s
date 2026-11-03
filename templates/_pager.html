@@ -1,0 +1,9 @@
+{# Pager links built by app._pager(): ‹ 1 … 4 5 6 … 10 ›. The links keep
+   the query string, so the filters and the sort survive a page turn. #}
+{% macro pager(p) %}
+<span class="pager">
+    {% if p.prev %}<a href="{{ p.prev }}" aria-label="Previous page">&lsaquo;</a>{% else %}<span class="dis">&lsaquo;</span>{% endif %}
+    {% for it in p.links %}{% if it.gap %}<span class="dis">&hellip;</span>{% elif it.on %}<span class="on" aria-current="page">{{ it.n }}</span>{% else %}<a href="{{ it.url }}">{{ it.n }}</a>{% endif %}{% endfor %}
+    {% if p.next %}<a href="{{ p.next }}" aria-label="Next page">&rsaquo;</a>{% else %}<span class="dis">&rsaquo;</span>{% endif %}
+</span>
+{% endmacro %}

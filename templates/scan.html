@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+{% block title %}Screening cases{% endblock %}
+
+{% block content %}
+<div class="page-head">
+    <div><h2>Screening cases</h2>
+        <p>Upload an ID. The AI reads it; the person is searched on World-Check; the AI decides each hit under the <a href="{{ url_for('screening_sop') }}">screening SOP</a>, from similar resolved cases; an analyst confirms. Every upload is a case.</p></div>
+</div>
+
+<div class="card mt-12" id="scan-form">
+    <div class="card-head"><div class="card-title">Upload an ID</div>
+        <div class="card-sub">JPEG, PNG or WebP, up to 10 MB · turned upright, resized, EXIF and GPS removed before anything reads it</div></div>
+    <div class="card-body">
+        <form method="post" enctype="multipart/form-data" class="scan-upload" id="scan-upload">
+            <label class="scan-drop" for="scan-file">
+                {{ icon('upload') }}
+                <span class="strong" id="scan-file-name">Choose the ID image</span>
+                <span class="small muted">or drop it here</span>
+                <input type="file" id="scan-file" name="image" accept="image/jpeg,image/png,image/webp" required>
+            </label>
+            <div class="scan-options">
+                <label class="small strong" for="scan-model">AI model that reads the document</label>
+                <select name="model" id="scan-model" class="input"{% if not model_ready %} disabled{% endif %}>
+                    {% for m in models %}<option value="{{ m.id }}"{% if m.id == default_model %} selected{% endif %}>{{ m.label }} · {% if m.price %}${{ m.price[0] }} / ${{ m.price[1] }} per M tokens{% else %}${{ m.per_page }} a page (Azure){% endif %}</option>{% endfor %}
+                </select>
+                <div class="tiny muted">{% if model_ready %}Through Straive's LLM Foundry gateway; the default is set on <a href="{{ url_for('screening_settings') }}">Settings</a>.{% else %}No model is configured (LLM_FOUNDRY_KEY): the image cannot be read.{% endif %}</div>
+                <div class="tiny muted" id="scan-source">Screened on: <b>{{ source }}</b> (<a href="{{ url_for('screening_settings') }}">change</a>).</div>
+                <div class="row mt-8" style="gap:8px">
+                    <button type="submit" name="via" value="ai" class="btn btn-primary" id="scan-submit"{% if not model_ready %} disabled{% endif %}>{{ icon('zoom-in') }} Read with AI</button>
+                    <button type="submit" name="via" value="ocr" class="btn btn-outline" id="scan-submit-ocr"{% if not ocr_ready %} disabled title="Tesseract is not installed on this machine"{% endif %}>{{ icon('file-text') }} Read with OCR</button>
+                </div>
+                <div class="tiny muted" id="scan-via-note"><b>AI</b>: the model above reads the ID and judges the photo. <b>OCR</b>: Tesseract on this machine, free; it reads the text, takes the fields from a passport's machine-readable zone, and does not judge the photo.</div>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="card mt-12 pad-0" id="scan-cases">
+    <div class="card-head" style="padding-bottom:10px"><div class="card-title">Cases</div>
+        <div class="card-sub">real ID images are kept until the case is deleted</div></div>
+    <div class="tabs chips" style="padding:0 16px">
+        <a class="tab chip {% if not status %}active{% endif %}" href="{{ url_for('scan_id') }}">All <span class="n">{{ counts.all }}</span></a>
+        <a class="tab chip {% if status == 'open' %}active{% endif %}" href="{{ url_for('scan_id', status='open') }}">Needs an analyst <span class="n">{{ counts.open }}</span></a>
+        <a class="tab chip {% if status == 'auto' %}active{% endif %}" href="{{ url_for('scan_id', status='auto') }}" title="Closed by the AI screening rule ({{ 'on' if auto_on else 'off' }} on Settings)">Auto-verified <span class="n">{{ counts.auto }}</span></a>
+        <a class="tab chip {% if status == 'closed' %}active{% endif %}" href="{{ url_for('scan_id', status='closed') }}">Closed by an analyst <span class="n">{{ counts.closed }}</span></a>
+    </div>
+    {% if scans %}
+    <div class="tbl-scroll">
+    <table class="tbl">
+        <thead><tr><th>Case ID</th><th>Uploaded</th><th>Name on the ID</th><th>Document</th><th>World-Check</th><th>AI</th><th>Status</th><th>Details</th></tr></thead>
+        <tbody>{% for s in scans %}{% set r = s.read or {} %}{% set f = r.fields or {} %}{% set sc = s.screening or {} %}{% set hits = sc.hits or [] %}
+        <tr><td class="nowrap"><a class="mono" href="{{ url_for('scan_result', scan_id=s.id) }}">{{ s.id }}</a></td>
+            <td class="nowrap small">{{ s.at }}<div class="tiny muted">{{ s.by|who }}</div></td>
+            <td class="strong">{{ f.full_name or ((f.given_names ~ ' ' ~ f.surname)|trim) or '—' }}<div class="tiny muted">{{ f.date_of_birth }}</div></td>
+            <td class="small">{{ r.document_type or '—' }}<div class="tiny muted">{{ r.issuing_country }}{% if f.document_number %} · {{ f.document_number }}{% endif %}</div></td>
+            <td class="small">{% if not s.screening %}<span class="muted">Not searched</span>
+                {% elif sc.error %}<span class="badge rose">Search failed</span>
+                {% elif hits %}<b>{{ hits|length }} hit{{ 's' if hits|length > 1 }}</b><div class="tiny muted">{{ hits[0].name }} · {{ hits[0].strength }}</div>
+                {% else %}<span class="badge emerald">No hit</span>{% endif %}</td>
+            <td class="small">{% set ns = namespace(wait=0, done=[]) %}{% for h in hits %}{% if (h.ai or {}).status == 'pending' %}{% set ns.wait = ns.wait + 1 %}{% elif (h.ai or {}).status == 'done' %}{% set ns.done = ns.done + [h.ai.suggested] %}{% endif %}{% endfor %}
+                {% if ns.wait %}<span class="badge blue">Reviewing {{ ns.wait }}</span>{% endif %}
+                {% for d in ns.done|unique %}<span class="badge {{ {'True match': 'rose', 'Possible match': 'amber', 'False positive': 'emerald'}[d] }}">{{ d }}</span> {% endfor %}
+                {% if not hits %}<span class="muted">—</span>{% endif %}</td>
+            <td>{% if s.status == 'closed' and s.closed.auto %}<span class="badge emerald" title="{{ s.closed.note }}">{{ icon('shield-check') }} Auto-verified</span><div class="tiny muted">{{ s.closed.outcome }} · AI screening rule</div>
+                {% elif s.status == 'closed' %}{% set o = s.closed.outcome %}<span class="badge {{ {'True match': 'solid-rose', 'Possible match': 'amber', 'Cleared': 'emerald', 'No match': 'emerald'}.get(o, 'slate') }}">{{ o }}</span><div class="tiny muted">{{ s.closed.by|who }}</div>
+                {% elif s.qc_sample %}<span class="badge amber" title="The AI screening rule would have closed it; kept for an analyst as a QC sample">QC sample</span>
+                {% else %}<span class="badge slate">Needs an analyst</span>{% endif %}</td>
+            <td><a class="btn btn-outline btn-xs nowrap" href="{{ url_for('scan_result', scan_id=s.id) }}" target="_blank" rel="noopener" title="Opens in a new tab">Details<span class="ext-ic">{{ icon('external-link') }}</span></a></td></tr>
+        {% endfor %}</tbody>
+    </table>
+    </div>
+    {% else %}
+    <div class="card-body small muted" id="scan-empty">No case{% if status %} {{ status }}{% endif %} yet. Upload an ID above: it becomes the first.</div>
+    {% endif %}
+</div>
+
+<script>
+(function () {
+    var input = document.getElementById('scan-file'), drop = input.closest('.scan-drop'), name = document.getElementById('scan-file-name');
+    input.addEventListener('change', function () { if (input.files.length) name.textContent = input.files[0].name; });
+    ['dragover', 'dragenter'].forEach(function (e) { drop.addEventListener(e, function (ev) { ev.preventDefault(); drop.classList.add('over'); }); });
+    ['dragleave', 'drop'].forEach(function (e) { drop.addEventListener(e, function () { drop.classList.remove('over'); }); });
+    drop.addEventListener('drop', function (ev) {
+        ev.preventDefault();
+        if (ev.dataTransfer.files.length) { input.files = ev.dataTransfer.files; name.textContent = input.files[0].name; }
+    });
+    var sent = false;
+    document.getElementById('scan-upload').addEventListener('submit', function (ev) {
+        if (sent) { ev.preventDefault(); return; }
+        sent = true;
+        var b = ev.submitter || document.getElementById('scan-submit');
+        b.textContent = (b.value === 'ocr' ? 'OCR is reading' : 'The AI is reading') + ' the document and searching World-Check…';
+    });
+})();
+</script>
+{% endblock %}

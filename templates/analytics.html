@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+{% from "_badges.html" import status_badge, sla_chip %}
+{% block title %}Analytics{% endblock %}
+
+{% from "_charts.html" import hbars, tier_bars %}
+
+{% block content %}
+<div class="page-head">
+    <div><h2>Operations analytics — {{ tenants[tenant].label }}</h2><p>Backlog, SLA pressure, escalations, screening outcomes, the tier pipeline, shift progress and QC quality, computed live from the case book (SOP 5.2.4). Every action you take on a case moves these numbers.</p></div>
+</div>
+
+<div class="kpi-strip">
+    {% for label, value, hint, tone in vm.kpis %}
+    <div class="kpi {% if tone %}tone-{{ tone }}{% endif %}"><div class="l">{{ label }}</div><div class="v">{{ value }}</div><div class="hint">{{ hint }}</div></div>
+    {% endfor %}
+</div>
+
+<div class="row" style="align-items:stretch;gap:12px">
+    <div class="card grow" style="min-width:320px"><div class="card-head"><div class="card-title">Cases by status</div></div><div class="card-body">{{ hbars(vm.status_counts) }}</div></div>
+    <div class="card grow" style="min-width:320px"><div class="card-head"><div class="card-title">Closures per reviewer</div><div class="card-sub">throughput</div></div><div class="card-body">{{ hbars(vm.throughput, '#059669') }}</div></div>
+    <div class="card grow" style="min-width:320px"><div class="card-head"><div class="card-title">Open cases by manual review reason</div></div><div class="card-body">{{ hbars(vm.reasons, '#d97706') }}</div></div>
+</div>
+
+<div class="row mt-12" style="align-items:stretch;gap:12px">
+    <div class="card grow" style="min-width:320px"><div class="card-head"><div class="card-title">Screening alert outcomes</div><div class="card-sub">{{ vm.total_alerts }} alerts</div></div><div class="card-body">{{ hbars(vm.outcome_counts, '#1d4ed8') }}</div></div>
+    <div class="card grow" style="min-width:320px"><div class="card-head"><div class="card-title">Auto-resolved vs manual</div><div class="card-sub">how much the screening rules clear before an analyst looks</div></div><div class="card-body">{{ hbars(vm.auto_vs_manual, '#6d28d9') }}</div></div>
+    <div class="card grow" style="min-width:320px"><div class="card-head"><div class="card-title">Top rationales</div></div><div class="card-body">{{ hbars(vm.rationales) }}</div></div>
+</div>
+
+<div class="row mt-12" style="align-items:stretch;gap:12px">
+    <div class="card grow" style="min-width:320px"><div class="card-head"><div class="card-title">Auto-verified vs human-in-the-loop</div><div class="card-sub">every case, by what the AI screening rules left for an analyst</div></div><div class="card-body">{{ hbars(vm.workflow_split, '#7c3aed') }}</div></div>
+    <div class="card grow" style="min-width:320px"><div class="card-head"><div class="card-title">AI screening rules fired</div><div class="card-sub">watchlist records each rule cleared · <a href="{{ url_for('ai_screening_page') }}">the rules</a></div></div><div class="card-body">{{ hbars(vm.rules_fired, '#7c3aed') }}</div></div>
+</div>
+
+<div class="card mt-12 pad-0">
+    <div class="card-head" style="padding-bottom:10px"><div class="card-title">SLA watch</div><div class="card-sub">breached or due within 12 hours, most urgent first</div></div>
+    <table class="tbl">
+        <thead><tr><th>Case ID</th><th>Client</th><th>Status</th><th>Reviewer</th><th>Due</th><th>SLA</th><th></th></tr></thead>
+        <tbody>
+        {% for r in vm.breached %}{% set c = r.case %}
+        <tr><td class="cell-id">{{ c.id }}</td><td class="strong">{{ c.client.legal_name }}</td><td>{{ status_badge(c.status) }}</td><td>{{ c.current_reviewer or '-' }}</td>
+            <td class="nowrap">{{ c.edd_due_at if c.status == 'DataEscalatingL2' else c.sla_due_at }}</td><td>{{ sla_chip(r.sla) }}</td>
+            <td><a class="btn btn-outline btn-xs" href="{{ url_for('kyc_detail', case_id=c.id) }}">Open</a></td></tr>
+        {% else %}<tr><td colspan="7"><div class="no-data">{{ icon('check-circle') }}No case is near its SLA.</div></td></tr>{% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<div class="row mt-12" style="align-items:stretch;gap:12px">
+    <div class="card grow" style="min-width:320px"><div class="card-head"><div class="card-title">Tier pipeline</div><div class="card-sub">open cases per tier (SOP 5.2.3)</div></div><div class="card-body">{{ tier_bars(vm.pipeline, '#1d4ed8') }}</div></div>
+    <div class="card grow" style="min-width:320px"><div class="card-head"><div class="card-title">Backlog ageing</div><div class="card-sub">open cases by time since submission</div></div><div class="card-body">{{ hbars(vm.ageing, '#b45309') }}</div></div>
+    <div class="card grow" style="min-width:320px"><div class="card-head"><div class="card-title">Hand-off lag</div><div class="card-sub">from one tier handing off to the next tier holding the case</div></div><div class="card-body">
+        <div class="kpi-strip" style="margin:0;grid-template-columns:1fr 1fr;gap:8px">
+            <div class="kpi tone-success" style="padding:10px 12px"><div class="l">Hub routing</div><div class="v">{{ vm.handoff_lag.hub_text }}</div><div class="hint">{{ vm.handoff_lag.hub_n }} hand-off(s)</div></div>
+            <div class="kpi" style="padding:10px 12px"><div class="l">Bot allocation</div><div class="v">{{ vm.handoff_lag.bot_text }}</div><div class="hint">{{ vm.handoff_lag.bot_n }} hand-off(s), history</div></div>
+        </div>
+        <div class="small muted" style="margin-top:8px">{{ vm.unassigned }} queue case(s) with nobody · {{ vm.handoff_lag.waiting }} hand-off(s) still waiting for a taker · <a href="{{ url_for('pipeline') }}">open the pipeline</a></div>
+    </div></div>
+</div>
+
+<div class="card mt-12 pad-0">
+    <div class="card-head" style="padding-bottom:10px"><div class="card-title">Shift progress</div><div class="card-sub">per analyst, all tenants — work in progress against capacity, routed and completed today, average handle time (SOP 5.2.4)</div></div>
+    <table class="tbl">
+        <thead><tr><th>Analyst</th><th>Roles</th><th>Shift</th><th>WIP / capacity</th><th class="num">Routed today</th><th class="num">Completed today</th><th class="num">At risk in hand</th><th class="num">Avg handle (h)</th></tr></thead>
+        <tbody>
+        {% for s in vm.shift %}
+        <tr><td class="strong nowrap">{{ s.name }}</td><td class="nowrap">{{ s.roles }}</td><td class="nowrap">{{ s.shift or '-' }}</td>
+            <td style="min-width:160px"><div class="row" style="gap:8px"><span class="tabular nowrap">{{ s.wip }} / {{ s.capacity }}</span><span class="cap-bar {% if s.wip > s.capacity %}over{% endif %}" style="flex:1;margin:0" title="{{ s.wip }} of {{ s.capacity }} slots in use"><i style="width:{{ [s.pct, 100]|min }}%"></i></span></div></td>
+            <td class="num">{{ s.routed_today }}</td><td class="num">{{ s.completed_today }}</td><td class="num">{% if s.at_risk %}<span class="sla warn">{{ s.at_risk }}</span>{% else %}0{% endif %}</td><td class="num">{{ s.avg_handle_h }}</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<div class="card mt-12 pad-0">
+    <div class="card-head" style="padding-bottom:10px"><div class="card-title">Quality scorecard (QC)</div><div class="card-sub">sampled closures per analyst — {{ vm.qc_pending }} in today's sample still to review</div></div>
+    <table class="tbl">
+        <thead><tr><th>Analyst</th><th class="num">Sampled</th><th class="num">Pass</th><th class="num">Fail</th><th>Pass rate</th><th>Top fail reasons</th></tr></thead>
+        <tbody>
+        {% for s in vm.quality %}
+        <tr><td class="strong nowrap">{{ s.name }}</td><td class="num">{{ s.sampled }}</td><td class="num">{{ s.passed }}</td><td class="num">{{ s.failed }}</td>
+            <td style="min-width:160px"><div class="row" style="gap:8px"><span class="tabular">{{ s.pass_rate }}%</span><span class="cap-bar" style="flex:1;margin:0;max-width:140px" title="{{ s.passed }} of {{ s.sampled }} passed"><i style="width:{{ s.pass_rate }}%"></i></span></div></td>
+            <td>{{ s.top_reasons|join('; ') or '-' }}</td></tr>
+        {% else %}<tr><td colspan="6"><div class="no-data">No QC review recorded yet.</div></td></tr>{% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

@@ -1,0 +1,141 @@
+{% extends "wc_base.html" %}
+{% from "_badges.html" import type_badges, strength_bar, outcome_badge %}
+{% block title %}{{ wc.primary_name }} - Case Manager{% endblock %}
+
+{% block content %}
+<div class="row between">
+    <a class="wc-back" href="{{ back_url }}">{{ icon('chevron-left') }} Back to Case Manager</a>
+    <div class="wc-toolbar">
+        <form method="post" action="{{ url_for('wc_export', wc_case_id=wc.id) }}" style="margin:0"><button type="submit" class="btn">{{ icon('download') }} Export</button></form>
+        <a class="btn" href="{{ url_for('wc_case', wc_case_id=wc.id, tab='audit') }}">{{ icon('activity') }} Activity</a>
+    </div>
+</div>
+
+<div class="wc-case-head">
+    <span class="who">{{ icon('user') }} {{ wc.primary_name }}</span>
+    <div class="kv">
+        <div><span class="l">Case Rating</span><span class="v">{{ wc.rating }} {{ icon('sliders') }}</span></div>
+        <div><span class="l">Case ID</span><span class="v mono">{{ wc.id }}</span></div>
+        <div><span class="l">Group</span><span class="v">{{ wc.group }}</span></div>
+        <div><span class="l">Assignee</span><span class="v">{{ wc.assignee }}</span></div>
+        <div><span class="l">Case Last Updated</span><span class="v">{{ wc.last_updated|wc_dt }}</span></div>
+        <div><span class="l">Ongoing Screening</span><span class="v">{{ icon('globe') }} {{ wc.ongoing_screening }}</span></div>
+    </div>
+</div>
+
+<div class="wc-tabs">
+    <a class="wc-tab {% if tab == 'summary' %}active{% endif %}" href="{{ url_for('wc_case', wc_case_id=wc.id, tab='summary') }}">{{ icon('list') }} Summary</a>
+    <a class="wc-tab {% if tab == 'worldcheck' %}active{% endif %}" href="{{ url_for('wc_case', wc_case_id=wc.id) }}">{{ icon('globe') }} World-Check {% if facets.status.Unresolved %}<span class="n">{{ facets.status.Unresolved }}</span>{% endif %}</a>
+    <a class="wc-tab {% if tab == 'audit' %}active{% endif %}" href="{{ url_for('wc_case', wc_case_id=wc.id, tab='audit') }}">{{ icon('clipboard') }} Audit</a>
+</div>
+
+<div class="wc-body {% if tab != 'worldcheck' %}two{% endif %}">
+    <aside class="wc-panel">
+        <h4>Case details {{ icon('sliders') }}</h4>
+        <div class="kv">
+            <div><span class="l">Primary Name</span><span class="v">{{ wc.primary_name }}</span></div>
+            <div><span class="l">Gender</span><span class="v">{{ wc.gender }}</span></div>
+            <div><span class="l">Date of Birth</span><span class="v">{{ (wc.dob ~ ' 00:00:00')|wc_date if wc.dob else '-' }}</span></div>
+            {% for k, v in wc.case_details.items() %}<div><span class="l">{{ k }}</span><span class="v">{{ v }}</span></div>{% endfor %}
+        </div>
+    </aside>
+
+    {% if tab == 'worldcheck' %}
+    <aside class="wc-panel wc-filter">
+        {% for s in ['Unresolved', 'True positive', 'Potential match', 'False positive', 'Unspecified'] %}
+        <a href="{{ url_for('wc_case', wc_case_id=wc.id, status=(s if status != s else ''), type=mtype) }}" class="{% if status == s %}on{% endif %} {% if s == 'Unresolved' and facets.status[s] %}unresolved{% elif s == 'False positive' and facets.status[s] %}fp{% endif %}">
+            <span>{{ s|upper if s == 'Unresolved' else s }}</span><span>({{ facets.status[s] }})</span></a>
+        {% endfor %}
+        <div class="facet"><span>Entity Type</span></div>
+        <div class="tiny" style="padding:0 6px 4px 18px;color:#cbd5e1">{{ 'ENTITY' if wc.gender == '' else 'INDIVIDUAL' }} <span class="muted">({{ wc.matches|length }})</span></div>
+        <div class="facet"><span>Type</span></div>
+        {% for t, n in facets.type.items() %}
+        <a href="{{ url_for('wc_case', wc_case_id=wc.id, status=status, type=(t if mtype != t else '')) }}" class="{% if mtype == t %}on{% endif %}" style="padding-left:18px"><span>{{ t }}</span><span>({{ n }})</span></a>
+        {% endfor %}
+        <a href="{{ url_for('wc_case', wc_case_id=wc.id) }}" class="btn btn-sm" style="margin-top:8px;height:24px;font-size:11px;background:#2a2e37;border:1px solid #3a3f4a;color:#e6e8ec">Reset Filters</a>
+    </aside>
+
+    <section class="wc-panel" style="padding:0;overflow:hidden">
+        <div class="row between" style="padding:8px 10px;border-bottom:1px solid var(--border)">
+            <span class="small">Showing <b>{{ page.start }}–{{ page.end }}</b> of <b>{{ page.total }}</b> matches for <b>{{ wc.primary_name }}</b></span>
+            <span class="row"><span class="wc-subtab active" style="cursor:default">Resolution</span></span>
+        </div>
+        {% set ai_col = wc.matches and wc.matches[0].ai is defined %}
+        <div class="tbl-scroll">
+            <table class="tbl dense">
+                <thead><tr>
+                    <th>Name</th>{% if ai_col %}<th>AI suggestion</th>{% endif %}<th>Matched Alias</th><th>Match Strength</th><th>Type</th><th>Gender</th><th>Date(s) of Birth</th><th>Place of Birth</th><th>Citizenship</th><th>Country Location</th>
+                    <th>World-Check ID</th><th>Entered Date</th><th>Updated Date</th><th>Matched Date</th><th>Last Alert Date</th><th>Last Resolved/ Reviewed On</th><th>Last Resolved/ Reviewed By</th><th>Risk Level</th><th></th>
+                </tr></thead>
+                <tbody>
+                {% for m in page['items'] %}
+                {% set r = m.resolution %}
+                <tr>
+                    <td class="nowrap"><a href="{{ url_for('wc_match', wc_case_id=wc.id, match_id=m.id, status=status, type=mtype) }}">{{ m.name }}</a></td>
+                    {% if ai_col %}<td class="nowrap">
+                        {%- if m.ai.status == 'done' %}{{ outcome_badge(m.ai.suggested_wc) }}{% if m.ai.confidence is not none %} <span class="tiny muted">{{ m.ai.confidence }}%</span>{% endif %}
+                        {%- elif m.ai.status == 'pending' %}<span class="spin"></span> <span class="tiny muted">deciding…</span>
+                        {%- elif m.ai.status == 'failed' %}<span class="tiny muted">no decision</span>
+                        {%- else %}<span class="tiny muted">—</span>{% endif %}</td>{% endif %}
+                    <td class="nowrap">{{ m.matched_alias }}</td>
+                    <td>{{ strength_bar(m.strength) }}</td>
+                    <td class="nowrap">{{ type_badges(m.types) }}</td>
+                    <td>{{ m.gender }}</td>
+                    <td class="nowrap">{% for d in m.dobs %}{{ d }}<br>{% endfor %}</td>
+                    <td>{{ m.pob }}</td>
+                    <td class="nowrap">{{ m.citizenship }}</td>
+                    <td class="nowrap">{{ m.country }}</td>
+                    <td class="mono">{{ m.wc_id }}</td>
+                    <td class="nowrap">{{ (m.entered ~ ' 00:00:00')|wc_date }}</td>
+                    <td class="nowrap">{{ (m.updated ~ ' 00:00:00')|wc_date }}</td>
+                    <td class="nowrap">{{ m.matched|wc_date }}</td>
+                    <td></td>
+                    <td class="nowrap">{{ r.at|wc_date if r.at else '' }}</td>
+                    <td class="nowrap">{{ r.by }}</td>
+                    <td>{% if r.risk %}{{ outcome_badge(r.risk) }}{% endif %}</td>
+                    <td>{% if r.remark %}<span title="Resolution Remark: {{ r.remark }}" style="cursor:help">{{ icon('file-text') }}</span>{% endif %}</td>
+                </tr>
+                {% else %}
+                <tr><td colspan="{{ 19 if ai_col else 18 }}"><div class="no-data">{{ icon('search') }}No matches for this filter.</div></td></tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% if page.pages > 1 %}
+        <div class="table-foot">
+            <span class="pager">
+                <a href="{{ url_for('wc_case', wc_case_id=wc.id, status=status, type=mtype, page=page.page-1) }}" class="{% if page.page == 1 %}dis{% endif %}">&lsaquo;</a>
+                {% for p in range(1, page.pages + 1) %}<a href="{{ url_for('wc_case', wc_case_id=wc.id, status=status, type=mtype, page=p) }}" class="{% if p == page.page %}on{% endif %}">{{ p }}</a>{% endfor %}
+                <a href="{{ url_for('wc_case', wc_case_id=wc.id, status=status, type=mtype, page=page.page+1) }}" class="{% if page.page == page.pages %}dis{% endif %}">&rsaquo;</a>
+            </span>
+            <span>50 / page</span>
+        </div>
+        {% endif %}
+    </section>
+
+    {% elif tab == 'summary' %}
+    <section class="wc-panel">
+        <h4>Summary</h4>
+        <div class="kpi-strip">
+            {% for s in ['Unresolved', 'True positive', 'Potential match', 'False positive', 'Unspecified'] %}
+            <div class="kpi"><div class="l">{{ s }}</div><div class="v">{{ facets.status[s] }}</div></div>
+            {% endfor %}
+        </div>
+        <h4>Exports</h4>
+        {% for e in wc.exports %}<div class="small">{{ icon('paperclip') }} <a href="{{ url_for('wc_export_pdf', wc_case_id=wc.id, ref=e.id) }}">{{ e.filename }}</a> · {{ e.at }} · {{ e.by }}</div>
+        {% else %}<div class="small muted">No export yet. Use EXPORT after resolving the matches.</div>{% endfor %}
+    </section>
+    {% elif tab == 'audit' %}
+    <section class="wc-panel">
+        <h4>Activity</h4>
+        <div class="timeline">
+            {% for e in wc.audit|reverse %}
+            <div class="timeline-item"><div class="event-name">{{ e.action }}</div><div class="event-meta">{{ e.at }} · {{ e.actor }}</div>{% if e.detail %}<div class="event-body">{{ e.detail }}</div>{% endif %}</div>
+            {% endfor %}
+        </div>
+    </section>
+    {% else %}
+    <section class="wc-panel"><div class="no-data">{{ icon('search') }}No data</div></section>
+    {% endif %}
+</div>
+{% endblock %}

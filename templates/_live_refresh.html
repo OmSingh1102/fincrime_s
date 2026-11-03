@@ -1,0 +1,176 @@
+<!-- Live-update watcher, shared by all three consoles.
+
+     The server bumps STATE_VERSION whenever shared state changes. Every page is
+     stamped with the value it rendered against; this polls a one-integer
+     endpoint and, when the two diverge, announces the change and refreshes the
+     page itself.
+
+     Tuned for a live demo: the change is *announced* before it happens, so an
+     audience watching a second screen sees why it moved rather than an
+     unexplained flicker, and it then completes hands-free so the presenter
+     never has to reach over and click the other window.
+
+     Two things stop the auto-refresh from being destructive:
+       - it holds while a field is focused, so nobody loses a part-finished
+         action or allocation to a refresh that fired at the wrong moment
+       - Hold cancels it outright, leaving a manual Refresh button
+
+     MODE = 'prompt' turns the countdown off and waits for a click instead. -->
+<style>
+    .live-bar {
+        position: fixed; right: 22px; bottom: 22px; z-index: 900;
+        display: none; align-items: center; gap: 14px;
+        background: var(--c-241a14, #241a14); color: var(--on-accent, #fff);
+        border: 1px solid rgba(255, 255, 255, .14); border-radius: 13px;
+        padding: 13px 15px 13px 17px;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, .3);
+        font-size: 13px; max-width: min(92vw, 430px);
+        animation: live-in .22s ease-out;
+    }
+    .live-bar.show { display: flex; }
+    @keyframes live-in { from { opacity: 0; transform: translateY(9px); } }
+    .live-bar .dot {
+        width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
+        background: var(--brand, #f4611a); animation: live-pulse 1.1s ease-in-out infinite;
+    }
+    @keyframes live-pulse {
+        0%, 100% { box-shadow: 0 0 0 3px rgba(244, 97, 26, .30); }
+        50%      { box-shadow: 0 0 0 7px rgba(244, 97, 26, .06); }
+    }
+    .live-bar .txt { line-height: 1.35; min-width: 0; }
+    .live-bar .txt b { display: block; font-weight: 700; }
+    .live-bar .txt span { color: rgba(255, 255, 255, .62); font-size: 11.5px; }
+    .live-bar button {
+        font-family: inherit; cursor: pointer; border-radius: 8px; border: none;
+        padding: 8px 14px; font-size: 12.5px; font-weight: 700;
+        background: var(--brand, #f4611a); color: var(--on-accent, #fff); flex-shrink: 0;
+    }
+    .live-bar button:hover { background: var(--c-d44e0e, #d44e0e); }
+    .live-bar .ghost {
+        background: none; color: rgba(255, 255, 255, .55);
+        border: 1px solid rgba(255, 255, 255, .18); font-weight: 600;
+    }
+    .live-bar .ghost:hover { background: rgba(255, 255, 255, .07); color: var(--on-accent, #fff); }
+
+    /* Confirmation after the refresh lands, so the update reads as a
+       completed beat rather than the page having blinked for no reason. */
+    .live-done {
+        position: fixed; right: 22px; bottom: 22px; z-index: 900; display: none;
+        align-items: center; gap: 9px; background: var(--c-17301f, #17301f); color: var(--c-d6f5e1, #d6f5e1);
+        border: 1px solid rgba(120, 220, 160, .28); border-radius: 13px;
+        padding: 12px 17px; font-size: 13px; font-weight: 600;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, .3); animation: live-in .22s ease-out;
+    }
+    .live-done.show { display: flex; }
+    @media (max-width: 560px) {
+        .live-bar, .live-done { right: 12px; left: 12px; bottom: 12px; max-width: none; }
+    }
+</style>
+
+<div class="live-bar" id="live-bar">
+    <span class="dot"></span>
+    <div class="txt">
+        <b id="live-title">Data changed</b>
+        <span id="live-sub">Someone updated this while you were looking.</span>
+    </div>
+    <button type="button" id="live-go" onclick="liveRefresh()">Refresh now</button>
+    <button type="button" class="ghost" id="live-hold" onclick="liveHold()">Hold</button>
+</div>
+
+<div class="live-done" id="live-done"><span>&#10003;</span> Updated with the latest data</div>
+
+<script>
+(function () {
+    var MODE = 'announce';        // 'announce' = countdown then refresh; 'prompt' = wait for a click
+    var COUNT_FROM = 3;           // seconds of warning before it refreshes itself
+    var EVERY_MS = 3000;          // how often we ask the server
+
+    var mine = {{ state_version|default(0) }};
+    var bar = document.getElementById('live-bar');
+    var title = document.getElementById('live-title');
+    var sub = document.getElementById('live-sub');
+    var go = document.getElementById('live-go');
+    var hold = document.getElementById('live-hold');
+    var poll = null, tick = null, left = 0, held = false;
+    var KEY = 'live-scroll:' + location.pathname;
+
+    // ── the completed beat: restore where they were, then confirm ──
+    try {
+        var back = sessionStorage.getItem(KEY);
+        if (back !== null) {
+            sessionStorage.removeItem(KEY);
+            window.scrollTo(0, parseInt(back, 10) || 0);
+            var done = document.getElementById('live-done');
+            done.classList.add('show');
+            setTimeout(function () { done.classList.remove('show'); }, 2600);
+        }
+    } catch (e) { /* private mode — the refresh still works, it just jumps */ }
+
+    window.liveRefresh = function () {
+        try { sessionStorage.setItem(KEY, String(window.scrollY)); } catch (e) {}
+        location.reload();
+    };
+
+    window.liveHold = function () {
+        held = true;
+        clearInterval(tick);
+        title.textContent = 'Update waiting';
+        sub.textContent = 'Refresh when you are ready.';
+        hold.style.display = 'none';
+        go.textContent = 'Refresh';
+    };
+
+    // Never refresh out from under someone part-way through something.
+    function busy() {
+        var el = document.activeElement;
+        return !!el && /^(INPUT|SELECT|TEXTAREA)$/.test(el.tagName);
+    }
+
+    function countdown() {
+        clearInterval(tick);
+        left = COUNT_FROM;
+        sub.textContent = 'Refreshing in ' + left + 's...';
+        tick = setInterval(function () {
+            if (held) { clearInterval(tick); return; }
+            if (busy()) { sub.textContent = 'Refreshing once you are done...'; return; }
+            left -= 1;
+            if (left <= 0) { clearInterval(tick); liveRefresh(); return; }
+            sub.textContent = 'Refreshing in ' + left + 's...';
+        }, 1000);
+    }
+
+    function announce(v) {
+        mine = v;
+        bar.classList.add('show');
+        if (MODE === 'announce' && !held) { countdown(); }
+        else { sub.textContent = 'Someone updated this while you were looking.'; }
+    }
+
+    function later() { clearTimeout(poll); poll = setTimeout(check, EVERY_MS); }
+
+    async function check() {
+        // No point polling a tab nobody is looking at; the visibility handler
+        // below checks the moment they come back to it.
+        if (document.hidden) { later(); return; }
+        try {
+            var r = await fetch('{{ poll_url or url_for("state_version") }}',
+                                {headers: {'Accept': 'application/json'}});
+            // A redirect to the portal means the session expired — not a data
+            // change, so stay quiet and let their next click handle it.
+            if (!r.ok || (r.headers.get('content-type') || '').indexOf('json') < 0) {
+                later(); return;
+            }
+            var j = await r.json();
+            if (j.v !== mine) { announce(j.v); } else { later(); }
+        } catch (e) {
+            later();              // server restarting, or offline — try again
+        }
+    }
+
+    document.addEventListener('visibilitychange', function () {
+        if (!document.hidden && !bar.classList.contains('show')) { check(); }
+    });
+
+    later();
+})();
+</script>

@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}Screening SOP{% endblock %}
+
+{% block content %}
+<div class="page-head">
+    <div><h2>Screening SOP <span class="badge primary">{{ current.version }} in force</span></h2>
+        <p>The procedure the AI decides every World-Check hit by. It is text, not code: change it here and save, and every open case's unconfirmed hits go to the AI again under the new version. The client's variance reference is added to it as the playbook, and with each hit the AI gets the resolved cases of the 1,000 most like it, with what the analysts decided.</p></div>
+</div>
+
+<div class="card mt-12" id="sop-edit">
+    <div class="card-head"><div><div class="card-title">{{ current.version }}{% if current.by %} · saved by {{ current.by|who }} on {{ current.at }}{% else %} · from the files (written on the tuning cases of the Model evaluation){% endif %}</div>
+        {% if current.changes %}<div class="card-sub">What changed: {{ current.changes|join(' · ') }}</div>{% endif %}</div></div>
+    <div class="card-body">
+        {% if can_edit %}
+        <form method="post" id="sop-form">
+            <textarea name="text" class="input sop-editor" rows="28" spellcheck="true">{{ current.text }}</textarea>
+            <div class="row mt-8">
+                <input class="input" name="note" placeholder="What you changed and why (kept with the version)" style="flex:1;min-width:280px">
+                <button class="btn btn-primary" type="submit" onclick="return confirm('Save as a new version? Every open case\'s unconfirmed hits go to the AI again under it.');">{{ icon('check') }} Save as a new version</button>
+            </div>
+        </form>
+        {% else %}
+        <pre class="sop-text">{{ current.text }}</pre>
+        <div class="small muted mt-8">Only the QC lead saves a new version: sign in as the QC lead to edit.</div>
+        {% endif %}
+    </div>
+</div>
+
+<div class="card mt-12 pad-0" id="sop-versions">
+    <div class="card-head" style="padding-bottom:10px"><div class="card-title">Versions</div><div class="card-sub">newest first; none is ever overwritten</div></div>
+    <div class="card-body">
+        {% for v in versions %}
+        <details class="sop-version"{% if loop.first %} open{% endif %}>
+            <summary><b>{{ v.version }}</b> · {% if v.source == 'file' %}file{% else %}{{ v.by|who }}, {{ v.at }}{% endif %}{% if v.changes %} · <span class="muted">{{ v.changes|join(' · ')|truncate(160) }}</span>{% endif %}</summary>
+            <pre class="sop-text">{{ v.text }}</pre>
+        </details>
+        {% endfor %}
+    </div>
+</div>
+{% endblock %}

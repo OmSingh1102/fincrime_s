@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% from "_badges.html" import status_badge, sla_chip %}
+{% block title %}Routing{% endblock %}
+
+{% block content %}
+<div class="page-head">
+    <div><h2>Routing console — {{ vm.tenant_label }}</h2>
+        <p>Who can take what, and where the router would send each unassigned case (SOP 5.2.1). Routing already happens by itself on every hand-off and on demand; this page lets the lead see it, tune capacity, and clear a backlog in one click.</p></div>
+    <div class="row"><span class="badge blue">{{ vm.routed_today }} routed today</span>{% if vm.queued %}<span class="badge amber">{{ vm.queued }} waiting for capacity</span>{% endif %}</div>
+</div>
+
+<div class="card pad-0">
+    <div class="card-head" style="padding-bottom:10px"><div class="card-title">Analysts and skill books</div><div class="card-sub">load counts every open case the analyst holds, however it got there</div></div>
+    <table class="tbl">
+        <thead><tr><th>Analyst</th><th>Roles</th><th>Tenants</th><th>Skills</th><th>Shift</th><th>Load / capacity</th><th class="num">Routed today</th>{% if can_edit %}<th>Capacity</th>{% endif %}</tr></thead>
+        <tbody>
+        {% for p in vm.people %}{% set a = p.analyst %}
+        <tr>
+            <td class="strong nowrap">{{ a.name }}</td>
+            <td class="nowrap">{{ a.roles|join(' / ') }}</td>
+            <td class="nowrap">{{ p.tenants|join(', ') }}</td>
+            <td>{% for s in p.skills %}<span class="skill-chip">{{ s }}</span>{% endfor %}</td>
+            <td class="nowrap">{{ a.shift or '-' }}</td>
+            <td style="min-width:170px">
+                <div class="row" style="gap:8px"><span class="tabular nowrap">{{ p.load }} / {{ p.capacity }}</span><span class="cap-bar {% if p.over %}over{% endif %}" style="flex:1;margin:0" title="{{ p.load }} of {{ p.capacity }} slots in use"><i style="width:{{ [p.pct, 100]|min }}%"></i></span></div>
+                {% if p.over %}<span class="tiny" style="color:var(--danger)">over capacity — manual assignment</span>{% endif %}
+            </td>
+            <td class="num">{{ p.routed_today }}</td>
+            {% if can_edit %}
+            <td><form method="post" action="{{ url_for('routing_capacity') }}" class="row" style="margin:0;gap:4px">
+                <input type="hidden" name="key" value="{{ a.key }}">
+                <input class="input input-sm" type="number" name="capacity" min="0" max="{{ vocab.CAPACITY_MAX }}" value="{{ p.capacity }}" style="width:64px" aria-label="Capacity for {{ a.name }}">
+                <button type="submit" class="btn btn-outline btn-xs">Set</button></form></td>
+            {% endif %}
+        </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<form method="post" action="{{ url_for('routing_run') }}">
+<div class="card mt-12 pad-0">
+    <div class="card-head" style="padding-bottom:10px">
+        <div><div class="card-title">Unassigned backlog <span class="muted small">({{ vm.unassigned }})</span></div><div class="card-sub">most urgent first; the pick is what the router would do right now</div></div>
+        <button type="submit" class="btn btn-primary btn-sm" {% if not vm.backlog %}disabled{% endif %}>{{ icon('sliders') }} Route selected now</button>
+    </div>
+    <table class="tbl">
+        <thead><tr><th style="width:28px"><input type="checkbox" checked onclick="rtAll(this)" aria-label="Select all"></th><th>Case</th><th>Status</th><th>Needs</th><th>SLA</th><th>Router's pick</th><th>Why</th><th></th></tr></thead>
+        <tbody>
+        {% for b in vm.backlog %}{% set c = b.case %}
+        <tr>
+            <td><input type="checkbox" class="rt-check" name="case_id" value="{{ c.id }}" checked></td>
+            <td class="nowrap"><b>{{ c.client.legal_name }}</b><br><span class="cell-id">{{ c.id }}</span></td>
+            <td>{{ status_badge(c.status) }}{% if c.pending_reason %} <span class="badge amber">{{ c.pending_reason }}</span>{% endif %}</td>
+            <td class="nowrap"><span class="skill-chip">{{ b.req.level }}</span><span class="skill-chip">{{ b.req.script }}</span>{% if b.req.kyb %}<span class="skill-chip">KYB</span>{% endif %}</td>
+            <td>{{ sla_chip(b.sla) }}</td>
+            <td class="nowrap">{% if b.pick %}<b>{{ b.pick_name }}</b>{% else %}<span class="badge amber">nobody free</span>{% endif %}</td>
+            <td class="small"><span title="{% for n, ok, why in b.candidates %}{{ n }}: {{ why }}&#10;{% endfor %}">{{ b.reason }}</span></td>
+            <td><a class="btn btn-outline btn-xs" href="{{ url_for('kyc_detail', case_id=c.id) }}">Open</a></td>
+        </tr>
+        {% else %}<tr><td colspan="8"><div class="no-data">{{ icon('check-circle') }}Every queue case is with somebody.</div></td></tr>{% endfor %}
+        </tbody>
+    </table>
+    {% if vm.more %}<div class="table-foot"><span>The {{ vm.backlog|length }} most urgent of {{ vm.unassigned }} unassigned cases; {{ vm.more }} more wait behind them, in SLA order.</span></div>{% endif %}
+</div>
+</form>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function rtAll(box) { document.querySelectorAll('.rt-check').forEach(function (c) { c.checked = box.checked; }); }
+</script>
+{% endblock %}

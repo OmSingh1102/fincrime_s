@@ -1,0 +1,309 @@
+{% extends "base.html" %}
+{% from "_badges.html" import outcome_badge %}
+{% from "_modals.html" import modal_open, modal_close %}
+{% block title %}Screening case - {{ who.name or s.id }}{% endblock %}
+
+{% block content %}
+{# A screening case (an uploaded ID) as the console's name-screening page
+   shows one: one alert row per World-Check hit, the AI's assessment of it,
+   the analyst's outcome. Values come from the upload, the model's read, the
+   hits and the analysts; a field nothing filled is left out. #}
+{% set sc = s.screening or {} %}{% set hits = sc.hits or [] %}{% set closed = s.status == 'closed' %}
+{% set ai_tone = {'True match': 'rose', 'Possible match': 'amber', 'False positive': 'emerald'} %}
+<div class="row between mb-12">
+    <div class="row">
+        <a class="btn btn-ghost btn-xs btn-icon" href="{{ url_for('scan_alerts', scan_id=s.id) }}" title="Refresh">{{ icon('refresh-cw') }}</a>
+        {% if closed and s.closed.auto %}<span class="badge violet" title="{{ s.closed.note }}">{{ icon('check-circle') }} Auto-verified by the AI screening rule</span>
+        {% elif closed %}<span class="badge slate">Closed</span>{% else %}<span class="badge emerald">Open</span>{% endif %}
+        {% if s.qc_sample %}<span class="badge amber" title="The AI screening rule would have closed it">QC sample</span>{% endif %}
+        {% if counts.Pending %}<span class="badge amber" title="hits no analyst has confirmed yet">{{ counts.Pending }} for review</span>{% endif %}
+        <a class="small" href="{{ url_for('scan_result', scan_id=s.id) }}">{{ icon('arrow-left') }} Case</a>
+    </div>
+</div>
+
+<details class="section" open>
+    <summary>Basic Information <span class="caret">{{ icon('chevron-down') }}</span></summary>
+    <div class="section-body">
+        <div class="desc cols-3">
+            <div><span class="l">Case ID</span><span class="v mono">{{ s.id }}</span></div>
+            <div><span class="l">Uploaded by</span><span class="v">{{ s.by|who }}</span></div>
+            <div><span class="l">Created Date</span><span class="v">{{ s.at }}</span></div>
+            <div><span class="l">Status</span><span class="v">{{ outcome_badge('Closed' if closed else 'Open') }}</span></div>
+            <div><span class="l">Screened on</span><span class="v">{{ 'World-Check One' if sc.source == 'World-Check One' else 'Stand-in World-Check' }}</span></div>
+            {% if wc_group %}<div><span class="l">WC Group Name</span><span class="v">{{ wc_group }}</span></div>{% endif %}
+            <div><span class="l">Latest Updated Date</span><span class="v">{{ wc.last_updated }}</span></div>
+            <div><span class="l">Last Screen Time</span><span class="v">{{ sc.at or '-' }}</span></div>
+            <div><span class="l">Screening SOP</span><span class="v"><a href="{{ url_for('screening_sop') }}">{{ sop.version }}</a></span></div>
+            <div><span class="l">Case</span><span class="v"><a href="{{ url_for('scan_result', scan_id=s.id) }}" class="mono">{{ s.id }}</a></span></div>
+            <div><span class="l">Document</span><span class="v">{{ who.document_type or '-' }}{% if who.document_number %} · <span class="mono">{{ who.document_number }}</span>{% endif %}</span></div>
+            <div><span class="l">Watchlist case</span><span class="v">{% if s.screening and not sc.error %}<a href="{{ url_for('wc_case', wc_case_id=s.id) }}" target="_blank" rel="noopener" title="Opens in a new tab" id="open-wc">Open in World-Check console<span class="ext-ic">{{ icon('external-link') }}</span></a>{% else %}-{% endif %}</span></div>
+        </div>
+        <div class="row mt-12">
+            <span class="small" id="case-outcome">Case outcome: {% if closed %}<b>{{ s.closed.outcome }}</b> <span class="muted">by {{ s.closed.by|who }} at {{ s.closed.at }}</span>{% else %}<span class="muted">none yet — the case closes when every alert has an outcome</span>{% endif %}</span>
+        </div>
+    </div>
+</details>
+
+<details class="section" open>
+    <summary>Screening Information <span class="caret">{{ icon('chevron-down') }}</span></summary>
+    <div class="section-body">
+        <div class="desc cols-4">
+            <div><span class="l">Search Type</span><span class="v">Individual</span></div>
+            <div><span class="l">Name</span><span class="v strong">{{ who.name or '-' }}</span></div>
+            <div><span class="l">Date of Birth</span><span class="v">{{ who.dob or '-' }}</span></div>
+            <div><span class="l">Gender</span><span class="v">{{ wc.gender or '-' }}</span></div>
+            <div><span class="l">Country Location</span><span class="v">{{ who.issuing_country or '-' }}</span></div>
+            <div><span class="l">Nationality</span><span class="v">{{ who.nationality or '-' }}</span></div>
+            <div><span class="l">Place of Birth</span><span class="v">{{ who.place_of_birth or '-' }}</span></div>
+            <div><span class="l">Identification Type</span><span class="v">{{ who.document_type or '-' }}</span></div>
+            <div><span class="l">Identification Number</span><span class="v mono">{{ who.document_number or '-' }}</span></div>
+            {% if who.address %}<div><span class="l">Address</span><span class="v">{{ who.address }}</span></div>{% endif %}
+        </div>
+    </div>
+</details>
+
+<details class="section" open>
+    <summary>List Screening ({{ hits|length }} matches found) <span class="caret">{{ icon('chevron-down') }}</span></summary>
+    <div class="section-body">
+        {% if sc.error %}<div class="verdict-box differs small mb-8">{{ sc.error }}</div>{% endif %}
+        <div class="row mb-8">
+            <span class="small muted" id="sel-outcome">No alert ticked</span>
+            <button type="button" class="btn btn-primary btn-sm" id="change-outcome" onclick="openAlertOutcome()" {% if closed or not counts.Pending %}disabled title="{{ 'The case is closed' if closed else 'Every alert has an outcome' }}"{% endif %}>Change Alert Outcome</button>
+            <form method="post" action="{{ url_for('scan_ai', scan_id=s.id) }}" id="ai-form" style="margin:0" onsubmit="return aiAssess(this)">
+                <button type="submit" class="btn btn-outline btn-sm" {% if closed or not counts.Pending %}disabled title="Only an alert with no outcome is sent to the AI"{% else %}title="Ask the AI again about the ticked alerts (or every alert with no outcome), under SOP {{ sop.version }}"{% endif %}>{{ icon('shield-check') }} AI assessment</button>
+            </form>
+        </div>
+        <div class="tabs chips" id="alert-tabs">
+            {% for label, n in counts.items() %}
+            <button type="button" class="tab chip {% if loop.first %}active{% endif %}" data-tab="{{ label }}" onclick="afTab(this)">{{ label }} ({{ n }})</button>
+            {% endfor %}
+        </div>
+        <div class="tbl-scroll">
+            <table class="tbl dense" id="alert-table">
+                <thead><tr>
+                    <th style="width:28px"><span class="sr-hide">Open</span></th><th style="width:40px"><input type="checkbox" id="pick-all" title="Tick every alert shown" aria-label="Tick every alert shown" onchange="afPickAll(this)"></th>
+                    <th>Vendor</th><th>Watch List ID</th><th>Alert Outcome</th><th>AI assessment</th><th>Name</th><th>Matched Alias</th><th>Score</th><th>Type</th><th>Date of Birth</th><th>Places</th>
+                    <th>Last Resolved By</th><th>Last Resolved Time</th><th>Reason</th><th>Risk</th><th class="sticky-right">World-Check</th>
+                </tr></thead>
+                <tbody>
+                {% for h in hits %}{% set ai = h.ai or {} %}{% set res = h.resolution %}{% set label = outcomes[res.status] if res else 'Pending' %}
+                <tr data-outcome="{{ label }}"{% if loop.first %} class="open"{% endif %}>
+                    <td><button type="button" class="row-toggle" aria-expanded="false" aria-label="Show the AI's assessment and the World-Check record behind {{ h.name }}" title="Show or hide the AI's assessment and the record" onclick="adToggle(this)">+</button></td>
+                    <td><input type="checkbox" name="pick" value="{{ h.uid }}" aria-label="Tick {{ h.name }}" data-name="{{ h.name }}" {% if res %}disabled title="Has an outcome"{% endif %}
+                               data-ai="{% if ai.status == 'done' %}{{ outcomes[ai.suggested] }} ({{ ai.label }}), {{ ai.confidence }}% — {{ ai.reasons|join('; ') }}{% endif %}" data-ai-outcome="{{ outcomes[ai.suggested] if ai.status == 'done' else '' }}" onchange="afPick()"></td>
+                    <td><span class="badge emerald">WC</span></td>
+                    <td class="mono">{{ h.uid }}</td>
+                    <td>{{ outcome_badge(label) }}</td>
+                    <td class="nowrap">{% if ai.status == 'done' %}<span class="badge {{ ai_tone.get(ai.suggested, 'slate') }}" title="{{ ai.label }} — {{ ai.reasons|join('; ') }} ({{ ai.model_label }}, SOP {{ ai.sop }})">{{ outcomes[ai.suggested] }} · {{ ai.confidence }}%</span>
+                        {% elif ai.status == 'pending' %}<span class="spin"></span> <span class="tiny muted">reviewing…</span>
+                        {% elif ai.status == 'failed' %}<span class="tiny muted" title="{{ ai.error }}">no answer</span>{% else %}-{% endif %}</td>
+                    <td class="nowrap">{{ h.name }}</td>
+                    <td class="nowrap">{{ h.aka|join(', ') if h.aka else '-' }}</td>
+                    <td class="num">{{ '%.2f'|format(h.score) }}</td>
+                    <td class="nowrap">{{ h.category or '-' }}</td>
+                    <td class="nowrap">{{ h.dob_text or '-' }}</td>
+                    <td class="nowrap">{{ h.places or '-' }}</td>
+                    <td class="nowrap">{{ res.by|who if res else '-' }}</td>
+                    <td class="nowrap">{{ res.at if res else '-' }}</td>
+                    <td>{{ (res.reason if res else '') or '-' }}</td>
+                    <td>{% if res and res.risk %}{{ outcome_badge(res.risk) }}{% else %}-{% endif %}</td>
+                    <td class="sticky-right"><a class="btn btn-outline btn-xs nowrap" href="{{ url_for('wc_match', wc_case_id=s.id, match_id=h.uid) }}" target="_blank" rel="noopener" title="Opens in a new tab">Open in WC<span class="ext-ic">{{ icon('external-link') }}</span></a></td>
+                </tr>
+                {% set d = details[h.uid] %}{% set m = d.m %}{% set kd = m.key_data %}{% set fi = m.further_info %}
+                <tr class="alert-detail hidden" data-for="{{ h.uid }}">
+                <td colspan="17"><div class="ad-wrap">
+                    <div class="ad-tabs" role="tablist">
+                        <button type="button" class="ad-tab active" data-pane="ai" onclick="adTab(this)">AI assessment</button>
+                        <button type="button" class="ad-tab" data-pane="overview" onclick="adTab(this)">Overview</button>
+                        <button type="button" class="ad-tab" data-pane="others" onclick="adTab(this)">Others</button>
+                    </div>
+                    <div class="ad-pane show" data-pane="ai">
+                        <div class="ad-card" id="ai-{{ h.uid }}">
+                            <h5>AI assessment{% if ai.status == 'done' %} ({{ ai.model_label }} · SOP {{ ai.sop }} · {{ ai.examples|length }} similar resolved case{{ 's' if ai.examples|length != 1 }}){% endif %}</h5>
+                            {% if ai.status == 'done' %}
+                            <p class="small"><span class="badge {{ ai_tone.get(ai.suggested, 'slate') }}">{{ outcomes[ai.suggested] }}</span> <b>{{ ai.label }}</b> · confidence {{ ai.confidence }}%</p>
+                            {% if ai.dob_finding %}<p class="small"><span class="muted">Date of birth:</span> {{ ai.dob_finding }}</p>{% endif %}
+                            {% if ai.reasons %}<ul class="small screen-reasons">{% for x in ai.reasons %}<li>{{ x }}</li>{% endfor %}</ul>{% endif %}
+                            {% if ai.request %}<p class="small"><span class="muted">Ask the customer for:</span> <b>{{ ai.request }}</b></p>{% endif %}
+                            {% if ai.name_variance or ai.address_variance %}<p class="tiny muted">Name discrepancy: {{ ai.name_variance or '—' }} · address discrepancy: {{ ai.address_variance or '—' }}</p>{% endif %}
+                            {% if res and res.auto %}<p class="small"><span class="badge violet">{{ icon('check-circle') }} Cleared by the AI screening rule</span> {{ res.note }}</p>
+                            {% elif res and res.ai_suggested %}<p class="small">{% if res.agreed %}<span class="badge emerald">The analyst agreed</span>{% else %}<span class="badge amber">The analyst decided {{ outcomes[res.status] }}</span>{% endif %}</p>{% endif %}
+                            {% elif ai.status == 'pending' %}<p class="small"><span class="spin"></span> The AI is reviewing this alert under SOP {{ sop.version }}, with the resolved cases most like it… <span class="muted">this page refreshes when it answers</span></p>
+                            {% elif ai.status == 'failed' %}<p class="small"><b>The AI gave no answer.</b> {{ ai.error }}</p>
+                            {% else %}<p class="small muted">Not sent to the AI.</p>{% endif %}
+                            <p class="tiny muted">A suggestion: the alert outcome is the analyst's.</p>
+                        </div>
+                        <div class="ad-card">
+                            <h5>Submitted against matched data</h5>
+                            <table class="ad-table"><thead><tr><th></th><th>Submitted Data</th><th>Matched Data</th></tr></thead><tbody>
+                            {% for row in d.compare %}<tr><td class="nowrap muted">{{ row.field }}</td><td>{% if row.match %}<span class="tone-ok">&#10003;</span> {% endif %}{{ row.submitted or '-' }}</td><td>{{ row.matched or '-' }}</td></tr>{% endfor %}
+                            </tbody></table>
+                            <p class="small mt-8"><span class="muted">Why listed:</span> {{ h.narrative or '-' }}</p>
+                        </div>
+                    </div>
+                    <div class="ad-pane" data-pane="overview">
+                        <div class="ad-card">
+                            <h5>Basic Info</h5>
+                            <div class="ad-kv">
+                                <div><span class="l">Name</span><span class="v">{{ m.name }}</span></div>
+                                <div><span class="l">Category</span><span class="v">{{ kd.category or '-' }}</span></div>
+                                {% if kd.sub_category %}<div><span class="l">Sub Category</span><span class="v">{{ kd.sub_category }}</span></div>{% endif %}
+                                {% if kd.pep_status %}<div><span class="l">PEP Status</span><span class="v">{{ kd.pep_status }}</span></div>{% endif %}
+                                {% if m.gender %}<div><span class="l">Gender</span><span class="v">{{ m.gender|title }}</span></div>{% endif %}
+                                <div><span class="l">Date(s) of birth</span><span class="v">{{ m.dobs|join(', ') or '-' }}</span></div>
+                                <div><span class="l">Citizenship</span><span class="v">{{ m.citizenship or '-' }}</span></div>
+                                <div><span class="l">Places</span><span class="v">{{ h.places or '-' }}</span></div>
+                                <div><span class="l">Aliases</span><span class="v">{{ m.aliases|join(', ') or '-' }}</span></div>
+                            </div>
+                            <h5>Further Information</h5>
+                            <p class="small">{{ fi.biography or h.narrative or '-' }}</p>
+                            {% for date, text in fi.reports %}<p class="small"><b>{{ date }}:</b> {{ text }}</p>{% endfor %}
+                        </div>
+                    </div>
+                    <div class="ad-pane" data-pane="others">
+                        <div class="ad-card"><h5>Sources <span class="muted">Total: {{ m.sources|length }}</span></h5>
+                            {% if m.sources %}<table class="ad-table"><thead><tr><th>Date Added</th><th>Source</th></tr></thead><tbody>
+                                {% for dt, u in m.sources %}<tr><td class="nowrap">{{ dt }}</td><td>{{ u }}</td></tr>{% endfor %}</tbody></table>
+                            {% else %}<div class="no-data">{{ icon('list') }}No data</div>{% endif %}
+                        </div>
+                        <div class="ad-card"><h5>World-Check record</h5>
+                            <div class="ad-kv"><div><span class="l">World-Check ID</span><span class="v mono">{{ m.wc_id }}</span></div>
+                                <div><span class="l">Types</span><span class="v">{{ m.types|join(', ') or '-' }}</span></div>
+                                <div><span class="l">Match strength</span><span class="v">{{ h.score }}% · {{ h.strength }}</span></div></div>
+                            <a class="btn btn-outline btn-xs" href="{{ url_for('wc_match', wc_case_id=s.id, match_id=h.uid) }}" target="_blank" rel="noopener" title="Opens in a new tab">Open the full record in World-Check<span class="ext-ic">{{ icon('external-link') }}</span></a>
+                        </div>
+                    </div>
+                </div></td>
+                </tr>
+                {% else %}
+                <tr><td colspan="17"><div class="no-data">{{ icon('search') }}No World-Check record matches the name{% if not closed and s.screening and not sc.error %} — confirm no match on the <a href="{{ url_for('scan_result', scan_id=s.id) }}#screening">case's Screening tab</a>{% endif %}</div></td></tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <div class="table-foot">
+            <span>Total: <b id="af-total">{{ hits|length }}</b></span>
+        </div>
+    </div>
+</details>
+
+<details class="section" open id="record-history">
+    <summary>Record History <span class="caret">{{ icon('chevron-down') }}</span></summary>
+    <div class="section-body">
+        <div class="timeline">
+            {% for e in wc.audit|reverse %}
+            <div class="timeline-item"><div class="event-name">{{ e.action }}</div><div class="event-meta">{{ e.at }} · {{ e.actor|who }}</div>{% if e.detail %}<div class="event-body">{{ e.detail }}</div>{% endif %}</div>
+            {% endfor %}
+            <div class="timeline-item"><div class="event-name">ID uploaded and read</div><div class="event-meta">{{ s.at }} · {{ s.by|who }}</div><div class="event-body">{{ s.file }}{% if s.model %} · read by {{ s.model.label }}{% endif %}</div></div>
+        </div>
+    </div>
+</details>
+
+{{ modal_open('alert-outcome', 'Change Alert Outcome', '') }}
+<form method="post" action="{{ url_for('scan_hits_outcome', scan_id=s.id) }}">
+    <div id="ao-alert-ids"></div>{# one hidden alert_id per ticked row, filled by the page script #}
+    <div class="modal-body">
+        <div class="field inline"><label>Alert</label><div class="small" id="ao-alert-label">—</div></div>
+        <div class="small muted mb-8" id="ao-multi" style="display:none"></div>
+        <div class="note info small mb-8" id="ao-ai" style="display:none"></div>
+        <div class="field inline"><label><span class="req">*</span>Outcome</label>
+            <select class="input" name="outcome" id="ao-outcome" required>
+                <option value="">Select</option>{% for o in outcomes.values() %}<option>{{ o }}</option>{% endfor %}</select></div>
+        <div class="field inline"><label>Reason</label>
+            <select class="input" name="reason" id="ao-reason">
+                <option value="">Select</option>{% for x in vocab.WC_REASONS %}<option>{{ x }}</option>{% endfor %}</select></div>
+        <div class="field inline"><label>RiskLevel</label>
+            <select class="input" name="risk" id="ao-risk">
+                <option value="">Select</option>{% for x in vocab.WC_RISKS %}<option>{{ x }}</option>{% endfor %}</select></div>
+        <div class="field inline"><label><span class="req">*</span>Comment</label>
+            <div><textarea class="textarea" name="comment" maxlength="2000" required oninput="document.getElementById('ao-count').textContent=this.value.length"></textarea><div class="counter"><span id="ao-count">0</span>/2000</div></div></div>
+        <div class="small muted">The outcome is prefilled with the AI's suggestion when it gave one; the decision is yours. The case closes when every alert has an outcome.</div>
+    </div>
+    <div class="modal-foot"><span class="spacer"></span>
+        <button type="button" class="btn btn-outline btn-sm" onclick="closeModal('alert-outcome')">Cancel</button>
+        <button type="submit" class="btn btn-primary btn-sm">OK</button></div>
+</form>
+{{ modal_close() }}
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function () {
+    var rows = Array.prototype.slice.call(document.querySelectorAll('#alert-table tbody tr[data-outcome]'));
+    var tab = 'All';
+    function paint() {
+        var n = 0;
+        rows.forEach(function (r) { var on = tab === 'All' || r.dataset.outcome === tab; r.classList.toggle('hidden', !on); if (on) { n++; } });
+        document.getElementById('af-total').textContent = n;
+        syncDetails();
+        afPick();
+    }
+    /* An alert row opens to the AI's assessment and the World-Check record behind it. */
+    function syncDetails() {
+        var width = document.querySelector('#alert-table').parentElement.clientWidth;
+        rows.forEach(function (r) {
+            var det = r.nextElementSibling, b = r.querySelector('.row-toggle');
+            if (!det || !det.classList.contains('alert-detail')) { return; }
+            var open = r.classList.contains('open') && !r.classList.contains('hidden');
+            det.classList.toggle('hidden', !open);
+            if (b) { b.textContent = r.classList.contains('open') ? '−' : '+'; b.setAttribute('aria-expanded', open ? 'true' : 'false'); }
+            var wrap = det.querySelector('.ad-wrap');
+            if (wrap) { wrap.style.width = Math.max(320, width - 30) + 'px'; }
+        });
+    }
+    window.adToggle = function (btn) { btn.closest('tr').classList.toggle('open'); syncDetails(); };
+    window.adTab = function (btn) {
+        var det = btn.closest('.alert-detail');
+        det.querySelectorAll('.ad-tab').forEach(function (t) { t.classList.toggle('active', t === btn); });
+        det.querySelectorAll('.ad-pane').forEach(function (p) { p.classList.toggle('show', p.dataset.pane === btn.dataset.pane); });
+    };
+    window.addEventListener('resize', syncDetails);
+    window.afTab = function (btn) {
+        tab = btn.dataset.tab;
+        document.querySelectorAll('#alert-tabs .tab').forEach(function (t) { t.classList.toggle('active', t === btn); });
+        paint();
+    };
+    function boxes() { return rows.map(function (r) { return r.querySelector('input[name=pick]'); }); }
+    function shownBoxes() { return boxes().filter(function (b) { return !b.disabled && !b.closest('tr').classList.contains('hidden'); }); }
+    function pickedBoxes() { return boxes().filter(function (b) { return b.checked; }); }
+    window.afPick = function () {
+        var p = pickedBoxes(), out = document.getElementById('sel-outcome'), shown = shownBoxes(), all = document.getElementById('pick-all');
+        out.textContent = p.length === 0 ? 'No alert ticked' : p.length === 1 ? 'Ticked: ' + p[0].dataset.name : p.length + ' alerts ticked';
+        out.classList.toggle('muted', p.length === 0);
+        all.checked = shown.length > 0 && shown.every(function (b) { return b.checked; });
+        all.indeterminate = !all.checked && shown.some(function (b) { return b.checked; });
+    };
+    window.afPickAll = function (box) { shownBoxes().forEach(function (b) { b.checked = box.checked; }); afPick(); };
+    /* AI assessment: one hidden alert_id per ticked row; none ticked = every alert with no outcome. */
+    window.aiAssess = function (form) {
+        form.querySelectorAll('input[name=alert_id]').forEach(function (h) { h.remove(); });
+        var p = pickedBoxes();
+        if (!p.length && !confirm('Nothing is ticked. Ask the AI again about every alert with no outcome?')) { return false; }
+        p.forEach(function (b) { var h = document.createElement('input'); h.type = 'hidden'; h.name = 'alert_id'; h.value = b.value; form.appendChild(h); });
+        var btn = form.querySelector('button');
+        btn.textContent = 'Asking the AI…';
+        setTimeout(function () { btn.disabled = true; }, 0);
+        return true;
+    };
+    window.openAlertOutcome = function () {
+        var p = pickedBoxes();
+        if (!p.length) { alert('Tick at least one alert (the check box at the left of its row) first.'); return; }
+        var ids = document.getElementById('ao-alert-ids');
+        ids.innerHTML = '';
+        p.forEach(function (b) { var h = document.createElement('input'); h.type = 'hidden'; h.name = 'alert_id'; h.value = b.value; ids.appendChild(h); });
+        document.getElementById('ao-alert-label').textContent = p.length === 1 ? p[0].dataset.name + ' (' + p[0].value + ')'
+            : p.length + ' alerts: ' + p.map(function (b) { return b.dataset.name; }).join(', ');
+        var note = document.getElementById('ao-multi');
+        note.style.display = p.length > 1 ? '' : 'none';
+        note.textContent = 'The outcome, reason, risk and comment below are written to all ' + p.length + ' ticked alerts.';
+        var first = p[0], ai = document.getElementById('ao-ai'), aiText = p.length === 1 ? (first.dataset.ai || '') : '';
+        ai.style.display = aiText ? '' : 'none';
+        ai.textContent = aiText ? 'AI assessment: ' + aiText : '';
+        var sel = document.getElementById('ao-outcome');
+        sel.value = (p.every(function (b) { return b.dataset.aiOutcome === first.dataset.aiOutcome; }) && first.dataset.aiOutcome) || '';
+        openModal('alert-outcome');
+    };
+    paint();
+})();
+</script>
+{% endblock %}

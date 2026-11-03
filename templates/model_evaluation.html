@@ -1,0 +1,117 @@
+{% extends "base.html" %}
+{% block title %}Model evaluation{% endblock %}
+
+{% macro matrix(m, rows_are="Analyst", cols_are="AI") -%}
+<table class="cm">
+    <thead><tr><th class="cm-corner">{{ rows_are }} ↓ · {{ cols_are }} →</th>{% for c in m.cols %}<th>{{ c }}</th>{% endfor %}</tr></thead>
+    <tbody>{% for r in m.rows %}<tr><th>{{ r.label }}</th>{% for c in r.cells %}<td class="cm-{{ c.kind }}" style="--a: {{ c.alpha }}">{{ c.n if c.n else '·' }}</td>{% endfor %}</tr>{% endfor %}</tbody>
+</table>
+{%- endmacro %}
+
+{% macro pct(v) %}{{ v if v is not none else '—' }}{% if v is not none %}%{% endif %}{% endmacro %}
+{% macro money(v, d=4) %}{% if v is not none %}${{ ('%.' ~ d ~ 'f')|format(v) }}{% else %}—{% endif %}{% endmacro %}
+{% macro ratio(x) %}{% if x[1] %}{{ x[0] }}/{{ x[1] }}{% else %}—{% endif %}{% endmacro %}
+
+{% block content %}
+<div class="page-head">
+    <div><h2>Model evaluation</h2>
+        <p>The two models of the Screening cases flow, measured on the IDs uploaded in this console as they are read and decided; the page follows every upload and every alert outcome. An upload has no answer key, so the reading model is measured by what the code's checks find on its read, and the deciding model against the analysts: each alert outcome an analyst gives is the answer its suggestion is scored on.</p>
+        <p class="small">In use (set on <a href="{{ url_for('screening_settings') }}">Settings</a>; the reader can also be chosen on each upload): reading <b>{{ reader_label }}</b> · deciding <b>{{ decider_label }}</b>.
+            So far: {{ totals.uploads }} upload{{ 's' if totals.uploads != 1 }}, {{ totals.hits }} World-Check hit{{ 's' if totals.hits != 1 }}, {{ totals.confirmed }} given an outcome by an analyst after the AI's suggestion; {{ totals.auto_closed }} case{{ 's' if totals.auto_closed != 1 }} auto-verified and {{ totals.auto_cleared }} hit{{ 's' if totals.auto_cleared != 1 }} cleared by the AI screening rule (<a href="{{ url_for('screening_settings') }}#settings-auto">its settings</a>). A hit the rule cleared is not scored: no analyst gave it an answer.</p></div>
+</div>
+
+{% if not totals.uploads %}
+<div class="card mt-12"><div class="card-body small muted" id="eval-empty">No upload yet. Upload an ID on <a href="{{ url_for('scan_id') }}">Screening cases</a>: this page fills as IDs are read, their hits decided by the AI, and analysts give each hit its outcome.</div></div>
+{% endif %}
+
+{# ── reading ── #}
+<div class="card mt-12 pad-0" id="eval-reading">
+    <div class="card-head" style="padding-bottom:10px"><div class="card-title">Reading the ID</div>
+        <div class="card-sub">each model that read an upload · what the code's checks found on its read</div></div>
+    {% if reading %}
+    <div class="tbl-scroll">
+    <table class="tbl" id="eval-reading-table">
+        <thead><tr><th>Model</th><th class="num">Uploads read</th><th class="num">MRZ check digits add up</th><th class="num">Printed fields agree with the MRZ</th><th class="num">Photos called spoiled</th><th class="num">Reads with a field unsure</th><th class="num">Not an ID</th><th class="num">Seconds a read</th><th class="num">Cost a read</th><th class="num">Spent</th></tr></thead>
+        <tbody>
+        {% for m in reading %}
+        <tr{% if m.id == reader %} class="arch-current"{% endif %}>
+            <td class="strong nowrap">{{ m.label }}{% if m.id == reader %} <span class="badge blue">in use</span>{% endif %}<div class="tiny muted">{{ m.id }}</div></td>
+            <td class="num">{{ m.reads }}</td>
+            <td class="num">{{ ratio(m.mrz_ok) }}</td>
+            <td class="num">{{ ratio(m.mrz_fields_ok) }}</td>
+            <td class="num">{{ m.flagged }}</td>
+            <td class="num">{{ m.unsure }}</td>
+            <td class="num">{{ m.not_id }}</td>
+            <td class="num">{{ m.seconds if m.seconds is not none else '—' }}</td>
+            <td class="num">{{ money(m.cost) }}</td>
+            <td class="num">{{ money(m.total, 2) }}</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    </div>
+    <div class="card-body small muted" style="padding-top:8px"><b>MRZ check digits add up</b>: on the uploads with a passport zone the model transcribed; a digit that does not add up is a misread or a forged zone. <b>Printed fields agree with the MRZ</b>: the name, number and dates printed on the page against the zone's. To compare readers, choose another model on the upload form.</div>
+    {% else %}
+    <div class="card-body small muted">No ID read yet.</div>
+    {% endif %}
+</div>
+
+{# ── deciding ── #}
+<div class="card mt-12 pad-0" id="eval-deciding">
+    <div class="card-head" style="padding-bottom:10px"><div class="card-title">Deciding each World-Check hit</div>
+        <div class="card-sub">each model that decided a hit · scored on the hits an analyst then gave an outcome</div></div>
+    {% if deciding %}
+    <div class="tbl-scroll">
+    <table class="tbl" id="eval-deciding-table">
+        <thead><tr><th>Model</th><th class="num">Hits decided</th><th class="num">Cleared by the rule</th><th class="num">Given an outcome by an analyst</th><th class="num">Analyst agreed</th><th class="num">AI said clear, analyst did not</th><th class="num">Calls failed</th><th class="num">Seconds a hit</th><th class="num">Cost a hit</th><th class="num">Spent</th></tr></thead>
+        <tbody>
+        {% for m in deciding %}
+        <tr{% if m.id == decider %} class="arch-current"{% endif %}>
+            <td class="strong nowrap">{{ m.label }}{% if m.id == decider %} <span class="badge blue">in use</span>{% endif %}<div class="tiny muted">{{ m.id }}</div></td>
+            <td class="num">{{ m.decided }}</td>
+            <td class="num">{{ m.auto }}</td>
+            <td class="num">{{ m.confirmed }}</td>
+            <td class="num">{% if m.confirmed %}{{ m.agreed }} · {{ pct(m.agreement) }}{% else %}—{% endif %}</td>
+            <td class="num">{% if m.cleared_wrongly %}<span class="badge rose">{{ m.cleared_wrongly }}</span>{% else %}0{% endif %}</td>
+            <td class="num">{{ m.failed }}</td>
+            <td class="num">{{ m.seconds if m.seconds is not none else '—' }}</td>
+            <td class="num">{{ money(m.cost) }}</td>
+            <td class="num">{{ money(m.total, 2) }}</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    </div>
+    <div class="card-body small muted" style="padding-top:8px"><b>Analyst agreed</b>: the alert outcome the analyst gave is the AI's suggestion (false positive, possible match, true match). <b>AI said clear, analyst did not</b>: the dangerous mistake, which must stay at 0 before any hit is closed without an analyst. To compare deciders, change the model on Settings: the hits decided after the change count for the new one.</div>
+    {% else %}
+    <div class="card-body small muted">No hit decided by the AI yet.</div>
+    {% endif %}
+</div>
+
+{% if deciding %}
+<div class="card mt-12" id="eval-matrices">
+    <div class="card-head"><div class="card-title">Confusion matrices</div>
+        <div class="card-sub">the hits an analyst gave an outcome · rows: the analyst's outcome · columns: the AI's suggestion · green agreement, red the AI said clear and the analyst did not, amber any other difference</div></div>
+    <div class="card-body">
+        <div class="cm-grid">
+            {% for m in deciding %}
+            <div class="cm-card{% if m.id == decider %} best{% endif %}">
+                <div class="cm-title">{{ m.label }}{% if m.id == decider %} <span class="badge blue">in use</span>{% endif %}</div>
+                <div class="tiny muted" style="margin-bottom:6px">{% if m.confirmed %}{{ pct(m.agreement) }} agreed, on {{ m.confirmed }} hit{{ 's' if m.confirmed != 1 }}{% else %}no hit given an outcome yet{% endif %}</div>
+                {{ matrix(m.view) }}
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+{% endif %}
+
+{% if by_sop %}
+<div class="card mt-12 pad-0" id="eval-sop">
+    <div class="card-head" style="padding-bottom:10px"><div class="card-title">By SOP version</div>
+        <div class="card-sub">the analysts' agreement with the AI under each version of the <a href="{{ url_for('screening_sop') }}">screening SOP</a> it decided by</div></div>
+    <table class="tbl">
+        <thead><tr><th>SOP</th><th class="num">Hits given an outcome</th><th class="num">Analyst agreed</th></tr></thead>
+        <tbody>{% for v in by_sop %}<tr><td class="strong">{{ v.version }}</td><td class="num">{{ v.confirmed }}</td><td class="num">{{ v.agreed }} · {{ pct(v.agreement) }}</td></tr>{% endfor %}</tbody>
+    </table>
+</div>
+{% endif %}
+{% endblock %}

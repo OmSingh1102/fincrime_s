@@ -1,0 +1,195 @@
+{% extends "base.html" %}
+{% block title %}AI Screening{% endblock %}
+
+{% block content %}
+<div class="page-head">
+    <div><h2>AI screening rules — {{ vm.tenant_label }}</h2>
+        <p>The preset automation that clears a watchlist record without an analyst, and what it did on this tenant's cases. A deterministic rule book, not a model: every rule is a check a compliance team can read and audit. A case where the rules clear every alert is <b>auto-verified</b> once it closes, with nothing more asked of the customer; until a customer's reply comes back it is <b>waiting on customer</b>. A case with anything left over is <b>human-in-the-loop</b>, and the analyst handles only what is left.</p></div>
+    <div class="row">{% if can_edit %}<span class="badge blue">team lead: switches live</span>{% else %}<span class="badge slate">switches: team lead only</span>{% endif %}</div>
+</div>
+
+<div class="kpi-strip">
+    {% for label, value, hint, tone in vm.tiles %}
+    <div class="kpi {% if tone %}tone-{{ tone }}{% endif %}"><div class="l">{{ label }}</div><div class="v">{{ value }}</div><div class="hint">{{ hint }}</div></div>
+    {% endfor %}
+</div>
+
+{# ── The AI Agent: Claude reads the documents, fixed checks decide ── #}
+{% set ai = vm.agent %}
+<div class="card mt-12 pad-0" id="ai-agent-card">
+    <div class="card-head" style="padding-bottom:10px">
+        <div><div class="card-title">AI Agent — reads every document, confirms the data</div>
+            <div class="card-sub">Runs by itself on every individual's case in Data Confirming: {{ ai.model }} reads every document (the passport's two pages, the secondary ID and the proof of address) and fixed checks compare the read with the CRM. When all pass, a case the rules cleared is Verified with no analyst; a case with an alert left goes to Data Screening with the agent's watchlist finding (likely true match, possible match, or likely a different person), and an analyst clears the alert. When nothing else is wrong and no alert is left, it settles the record's own slips itself: a record that kept the father's name for the holder's, a married surname on the form, an English first name beside the naturalisation certificate (kept as the preferred name) or a PO Box for a home is corrected to what the documents agree on, then confirmed; a proof of address older than {{ sop.poa_age_text() }} (the SOP rules page) is asked for again (Resubmit POA), and the document linking two names or which home is the main one is asked for by RFI. Anything unreadable, expired, missing or different goes to an analyst with the reason. Companies, and cases a person already holds, are the analysts'.</div></div>
+        <div class="row" style="gap:8px">
+            {% if ai.running %}<span class="badge blue" id="ai-agent-state">Running · {{ ai.busy }} reading now</span>
+            {% else %}<span class="badge slate" id="ai-agent-state">Paused{% if ai.stopped %} · {{ ai.stopped }}{% endif %}</span>{% endif %}
+            {% if can_edit and agent_ready %}
+            <form method="post" action="{{ url_for('ai_agent_pause' if ai.running else 'ai_agent_start') }}" style="margin:0">
+                <button type="submit" class="btn {{ 'btn-outline' if ai.running else 'btn-primary' }} btn-sm">{{ 'Pause' if ai.running else 'Resume' }}</button>
+            </form>
+            {% elif not agent_ready %}<span class="small muted">Needs LLM_FOUNDRY_KEY</span>
+            {% else %}<span class="small muted">Start / Pause: team lead</span>{% endif %}
+        </div>
+    </div>
+    <div class="kpi-strip" style="padding:0 16px 12px">
+        <div class="kpi"><div class="l">Waiting for the agent</div><div class="v">{{ ai.queue }}</div><div class="hint">in Data Confirming, not read yet</div></div>
+        <div class="kpi tone-success"><div class="l">Handled by AI</div><div class="v">{{ ai.verified }}</div><div class="hint">verified with no analyst{% if ai.corrected %} · {{ ai.corrected }} with the record corrected{% endif %}</div></div>
+        <div class="kpi tone-info"><div class="l">Confirmed, alert left</div><div class="v">{{ ai.screening }}</div><div class="hint">in Data Screening for an analyst</div></div>
+        <div class="kpi" id="ai-agent-resubmit-kpi"><div class="l">Asked the customer</div><div class="v">{{ ai.resubmit + ai.rfi }}</div><div class="hint">{{ ai.resubmit }} new proof of address · {{ ai.rfi }} RFI</div></div>
+        <div class="kpi {% if ai.human %}tone-warning{% endif %}"><div class="l">Sent to a person</div><div class="v">{{ ai.human }}</div><div class="hint">a check failed</div></div>
+        <div class="kpi"><div class="l">Model calls</div><div class="v">{{ ai.calls }}</div><div class="hint">{{ ai.avg_seconds }} s each · {{ '{:,}'.format(ai.tokens) }} tokens</div></div>
+    </div>
+    {% if ai.done %}
+    <table class="tbl dense">
+        <tbody>
+        {% if ai.why %}<tr><td class="strong nowrap" style="width:260px">Checks that failed<div class="tiny muted" style="font-weight:400">a case can fail several</div></td>
+            <td>{% for check, n in ai.why %}<span class="badge amber">{{ check }}: {{ n }}</span> {% endfor %}</td></tr>{% endif %}
+        {% set vd = ai.verdict %}{% if vd.judged or vd.waiting %}<tr id="ai-verdict-row"><td class="strong nowrap">Claude's own verdict<div class="tiny muted" style="font-weight:400">a second opinion; the rules decide</div></td>
+            <td>{% if vd.judged %}<span class="badge {{ 'emerald' if vd.pct >= 90 else 'amber' }}">agrees with the rules on {{ vd.agree }} of {{ vd.judged }} ({{ vd.pct }}%)</span>
+                {% if vd.verify_vs_person %}<a class="badge rose" href="{{ url_for('kyc_list', verdict='disagree', agent='verified') }}">rules verified, Claude would send to a person: {{ vd.verify_vs_person }}</a>{% endif %}
+                {% if vd.person_vs_verify %}<a class="badge amber" href="{{ url_for('kyc_list', verdict='disagree', agent='human') }}">rules sent to a person, Claude would verify: {{ vd.person_vs_verify }}</a>{% endif %}
+                <span class="small muted">average confidence {{ vd.conf_agree }}% when it agrees{% if vd.verify_vs_person or vd.person_vs_verify %}, {{ vd.conf_differ }}% when it does not{% endif %}</span>{% endif %}
+                {% if vd.waiting %}<span class="badge slate">{{ vd.waiting }} earlier read(s) waiting for a verdict</span>{% endif %}
+                {% if vd.failed %}<span class="badge slate">{{ vd.failed }} verdict call(s) failed</span>{% endif %}</td></tr>{% endif %}
+        {% if ai.has_file %}<tr><td class="strong nowrap">Handled by AI, against the file</td>
+            <td>{% if ai.verified %}<span class="badge {{ 'emerald' if not ai.file_tp else 'rose' }}">{{ ai.file_fp }} of {{ ai.verified }} recorded as false positives</span>
+                <span class="badge {{ 'emerald' if not ai.file_tp else 'rose' }}">true matches verified: {{ ai.file_tp }}</span>{% if ai.file_other %} <span class="badge slate">{{ ai.file_other }} escalated or pending in the file</span>{% endif %}
+                {% else %}<span class="muted">none yet</span>{% endif %}</td></tr>{% endif %}
+        </tbody>
+    </table>
+    <table class="tbl dense">
+        <thead><tr><th>Case</th><th>Customer</th><th>Agent decision</th><th>Reason</th><th>At</th></tr></thead>
+        <tbody>
+        {% for r in ai.recent %}
+        <tr><td><a class="link mono" href="{{ url_for('kyc_detail', case_id=r.id) }}">{{ r.id }}</a></td><td>{{ r.name }}</td>
+            <td><span class="badge {{ {'verified': 'emerald', 'screening': 'blue', 'human': 'amber', 'resubmit': 'slate', 'rfi': 'slate'}[r.decision] }}">{{ agent_labels[r.decision] }}</span></td>
+            <td class="small">{{ r.reason or '—' }}</td><td class="small muted nowrap">{{ r.at }}</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    {% endif %}
+</div>
+
+{% if vm.against %}{% set ag = vm.against %}
+<div class="card mt-12 pad-0" id="against-file">
+    <div class="card-head" style="padding-bottom:10px"><div class="card-title">Against the reconciliation log</div><div class="card-sub">what the file's analysts recorded for the same {{ ag.cases }} cases — the rules never read it</div></div>
+    <table class="tbl">
+        <tbody>
+        <tr>
+            <td class="strong nowrap" style="width:260px">Cleared by the rules, no analyst</td>
+            <td class="num tabular" style="width:70px">{{ ag.auto }}</td>
+            <td>{% if ag.auto %}<span class="badge {{ 'emerald' if ag.auto_fp == ag.auto else 'rose' }}">{{ ag.auto_fp }} of {{ ag.auto }} recorded as false positives ({{ ag.auto_pct }}%)</span>
+                {% for label, n, tone in ag.auto_split if label != 'false positive' %} <span class="badge {{ tone }}">{{ n }} {{ label }}</span>{% endfor %}{% else %}<span class="muted">none</span>{% endif %}</td>
+        </tr>
+        <tr>
+            <td class="strong nowrap">Left for an analyst</td>
+            <td class="num tabular">{{ ag.held }}</td>
+            <td>{% for label, n, tone in ag.held_split %}<span class="badge {{ tone }}">{{ n }} {{ label }}</span> {% endfor %}
+                {% if ag.held and not ag.tp_cleared %}<span class="small muted">· every true match the file records is in this row</span>{% endif %}</td>
+        </tr>
+        </tbody>
+    </table>
+</div>
+{% endif %}
+
+<div class="card mt-12 pad-0">
+    <div class="card-head" style="padding-bottom:10px"><div class="card-title">Rules</div><div class="card-sub">first rule that fires wins; a switch applies to the next screening run, never to a record already resolved</div></div>
+    <table class="tbl">
+        <thead><tr><th>Rule</th><th>What it checks</th><th>Resolution written</th><th class="num">Fired</th><th>Status</th>{% if can_edit %}<th></th>{% endif %}</tr></thead>
+        <tbody>
+        {% for r in vm.rules %}
+        <tr>
+            <td class="strong nowrap">{{ r.label }}</td>
+            <td class="small">{{ r.checks }}</td>
+            <td class="small nowrap">False positive · Low · {{ r.wc_reason }}<br><span class="muted">alert rationale: {{ r.rationale }}</span></td>
+            <td class="num tabular">{{ r.fired }}</td>
+            <td>{% if r.on %}<span class="badge emerald">on</span>{% else %}<span class="badge slate">off</span>{% endif %}</td>
+            {% if can_edit %}
+            <td><form method="post" action="{{ url_for('ai_screening_rules') }}" style="margin:0">
+                <input type="hidden" name="key" value="{{ r.key }}"><input type="hidden" name="enabled" value="{{ '0' if r.on else '1' }}">
+                <button type="submit" class="btn btn-outline btn-xs">{{ 'Switch off' if r.on else 'Switch on' }}</button></form></td>
+            {% endif %}
+        </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<div class="row mt-12" style="align-items:stretch;gap:12px">
+    <div class="card grow pad-0" style="min-width:320px">
+        <div class="card-head" style="padding-bottom:10px"><div class="card-title">Guards</div><div class="card-sub">policy switches that hold a record back from the rules</div></div>
+        <table class="tbl">
+            <thead><tr><th>Guard</th><th>What it does</th><th>Status</th>{% if can_edit %}<th></th>{% endif %}</tr></thead>
+            <tbody>
+            {% for g in vm.guards %}
+            <tr>
+                <td class="strong">{{ g.label }}</td>
+                <td class="small">{{ g.checks }}</td>
+                <td>{% if g.on %}<span class="badge emerald">on</span>{% else %}<span class="badge slate">off</span>{% endif %}</td>
+                {% if can_edit %}
+                <td><form method="post" action="{{ url_for('ai_screening_rules') }}" style="margin:0">
+                    <input type="hidden" name="key" value="{{ g.key }}"><input type="hidden" name="enabled" value="{{ '0' if g.on else '1' }}">
+                    <button type="submit" class="btn btn-outline btn-xs">{{ 'Switch off' if g.on else 'Switch on' }}</button></form></td>
+                {% endif %}
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    <div class="card grow" style="min-width:320px">
+        <div class="card-head"><div class="card-title">Rails that never switch</div><div class="card-sub">what keeps the automation safe to audit</div></div>
+        <div class="card-body">
+            <ul class="small" style="margin:0;padding-left:18px;line-height:1.6">
+                {% for line in vm.rails %}<li>{{ line }}</li>{% endfor %}
+            </ul>
+            <div class="note info mt-12">The seeded case book was screened with the default rules. A switch changes what happens at the next intake or re-screen after Data Confirming; the rules never revisit a resolution that is already recorded, by an analyst or by themselves.</div>
+        </div>
+    </div>
+</div>
+
+<div class="card mt-12">
+    <div class="card-head"><div class="card-title">Model assessment</div><div class="card-sub">a real model, on demand, advisory — Claude through Straive's LLM Foundry</div></div>
+    <div class="card-body">
+        <div class="row" style="gap:28px;flex-wrap:wrap;align-items:flex-start">
+            <div><div class="tiny muted">Status</div>{% if vm.model.configured %}<span class="badge emerald">configured</span>{% else %}<span class="badge slate">not configured</span> <span class="tiny muted">set LLM_FOUNDRY_KEY</span>{% endif %}</div>
+            <div><div class="tiny muted">Model</div><span class="mono small">{{ vm.model.model }}</span></div>
+            <div><div class="tiny muted">Gateway</div><span class="mono small">{{ vm.model.gateway }}</span></div>
+            <div><div class="tiny muted">Assessments on this tenant</div><span class="tabular">{{ vm.model.count }}</span></div>
+            <div><div class="tiny muted">Switch</div>{% if vm.model.on %}<span class="badge emerald">on</span>{% else %}<span class="badge slate">off</span>{% endif %}
+                {% if can_edit %}<form method="post" action="{{ url_for('ai_screening_rules') }}" style="display:inline;margin-left:6px">
+                    <input type="hidden" name="key" value="model_review"><input type="hidden" name="enabled" value="{{ '0' if vm.model.on else '1' }}">
+                    <button type="submit" class="btn btn-outline btn-xs">{{ 'Switch off' if vm.model.on else 'Switch on' }}</button></form>{% endif %}</div>
+        </div>
+        <p class="small mt-12" style="margin-bottom:0">On a screening case, <b>AI assessment</b> sends the client record, the watchlist record and the system's own field comparison to the model, which answers with a verdict (same person, different person, unclear), a confidence, its reasons and the data it found missing. The answer is written on the alert row and the watchlist record with an audit row on every case, and shown in the Change Alert Outcome dialog. It resolves nothing and never runs at intake: the rules above remain the only automation that clears a record without a person.{% if vm.model.last_error %} <span class="muted">Last error: {{ vm.model.last_error }}</span>{% endif %}</p>
+    </div>
+</div>
+
+<div class="card mt-12 pad-0">
+    <div class="card-head" style="padding-bottom:10px"><div class="card-title">What the rules did</div><div class="card-sub">newest first — every run signs its own audit row as {{ vocab.SYSTEM_USER }}</div></div>
+    <table class="tbl dense">
+        <thead><tr><th>When</th><th>Record</th><th>Client</th><th>Detail</th></tr></thead>
+        <tbody>
+        {% for f in vm.feed %}
+        <tr>
+            <td class="nowrap">{{ f.at }}</td>
+            <td class="nowrap"><a href="{{ url_for(f.endpoint, **f.args) }}"{% if f.new_tab %} target="_blank" rel="noopener" title="Opens in a new tab"{% endif %}>{{ f.kind }}{% if f.new_tab %}<span class="ext-ic">{{ icon('external-link') }}</span>{% endif %}</a></td>
+            <td class="strong nowrap">{{ f.name }}</td>
+            <td class="small">{{ f.detail }}</td>
+        </tr>
+        {% else %}<tr><td colspan="4"><div class="no-data">{{ icon('info') }}The rules have not resolved anything on this tenant yet.</div></td></tr>{% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<div class="card mt-12 pad-0">
+    <div class="card-head" style="padding-bottom:10px"><div class="card-title">Rule changes</div><div class="card-sub">who switched what, and when</div></div>
+    <table class="tbl dense">
+        <thead><tr><th>When</th><th>By</th><th>Rule</th><th>Change</th></tr></thead>
+        <tbody>
+        {% for h in vm.history %}
+        <tr><td class="nowrap">{{ h.at }}</td><td class="nowrap">{{ h.by|who }}</td><td>{{ h.label }}</td><td>{{ 'on' if h['from'] else 'off' }} → {{ 'on' if h.to else 'off' }}</td></tr>
+        {% else %}<tr><td colspan="4"><div class="no-data">{{ icon('check-circle') }}No changes; the defaults are in force.</div></td></tr>{% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

@@ -1,0 +1,162 @@
+{% extends "base.html" %}
+{% block title %}Settings{% endblock %}
+
+{% block content %}
+<div class="page-head">
+    <div><h2>Settings</h2>
+        <p>Where the console screens, and with which models. Nothing here is in the code: the QC lead changes it, and it applies to the next upload (and to "Search again" on an open case).</p></div>
+</div>
+{% if not can_edit %}
+<div class="note warn mt-12" id="settings-locked"><b>Read only.</b> Only the QC lead changes the settings: sign out and sign in as <b>{{ qc_names or 'the QC lead' }}</b> to enter keys and change models.</div>
+{% endif %}
+
+<form method="post" id="settings-form">
+<div class="card mt-12" id="settings-wc">
+    <div class="card-head"><div><div class="card-title">World-Check connection</div>
+        <div class="card-sub">Screening now: <b>{{ source }}</b></div></div>
+        <span class="badge {{ 'emerald' if live else 'amber' }}">{{ 'Live World-Check One' if live else 'Stand-in: no key entered' }}</span></div>
+    <div class="card-body">
+        <p class="small muted" style="margin-top:0">With no key, the console searches the stand-in watchlist: the {{ watchlist_size }} World-Check records of the reconciliation log's cases. Enter the World-Check One API key and secret from the licence, and the group to screen in, and it screens on World-Check One itself. The calls are written from LSEG's public description of the API and have not run against the service yet: check the host and paths against the documentation that comes with the licence, then press <b>Test connection</b>.</p>
+        <div class="settings-grid">
+            <label>API key<input class="input" name="api_key" value="{{ wc.api_key }}" autocomplete="off"{% if not can_edit %} disabled{% endif %}></label>
+            <label>API secret<input class="input" name="api_secret" type="password" value="" placeholder="{{ secret_shown or 'not entered' }}" autocomplete="new-password"{% if not can_edit %} disabled{% endif %}>
+                <span class="tiny muted">{% if wc.api_secret %}Stored. Leave blank to keep it. <label class="tiny"><input type="checkbox" name="forget_secret" value="1"> forget it</label>{% else %}Never shown again once saved.{% endif %}</span></label>
+            <label>Group ID<input class="input" name="group_id" value="{{ wc.group_id }}"{% if not can_edit %} disabled{% endif %}></label>
+            <label>Host<input class="input" name="host" value="{{ wc.host }}"{% if not can_edit %} disabled{% endif %}></label>
+            <label>Base path<input class="input" name="base_path" value="{{ wc.base_path }}"{% if not can_edit %} disabled{% endif %}></label>
+            <label>Screening path<input class="input" name="screen_path" value="{{ wc.screen_path }}"{% if not can_edit %} disabled{% endif %}></label>
+            <label>Groups path<input class="input" name="groups_path" value="{{ wc.groups_path }}"{% if not can_edit %} disabled{% endif %}></label>
+            <label>Profile path<input class="input" name="profile_path" value="{{ wc.profile_path }}"{% if not can_edit %} disabled{% endif %}></label>
+        </div>
+    </div>
+</div>
+
+<div class="card mt-12" id="settings-models">
+    <div class="card-head"><div class="card-title">Models and search</div>
+        <div class="card-sub">{% if model_ready %}through Straive's LLM Foundry gateway{% else %}no model is configured (LLM_FOUNDRY_KEY){% endif %} · the <a href="{{ url_for('model_evaluation') }}">Model evaluation</a> compares them</div></div>
+    <div class="card-body settings-grid">
+        <label>Model that reads the ID
+            <select class="input" name="reader_model"{% if not can_edit %} disabled{% endif %}>{% for m in readers %}<option value="{{ m.id }}"{% if m.id == s.reader_model %} selected{% endif %}>{{ m.label }}</option>{% endfor %}</select></label>
+        <label>Model that decides each hit
+            <select class="input" name="decision_model"{% if not can_edit %} disabled{% endif %}>{% for m in deciders %}<option value="{{ m.id }}"{% if m.id == s.decision_model %} selected{% endif %}>{{ m.label }} · ${{ m.price[0] }} / ${{ m.price[1] }} per M tokens</option>{% endfor %}</select></label>
+        <label>Resolved example cases per hit
+            <input class="input" type="number" name="examples" min="0" max="12" value="{{ s.examples }}"{% if not can_edit %} disabled{% endif %}>
+            <span class="tiny muted">0 = the SOP alone</span></label>
+        <label>Name score a stand-in hit needs (50-100)
+            <input class="input" type="number" name="name_threshold" min="50" max="100" value="{{ s.name_threshold }}"{% if not can_edit %} disabled{% endif %}>
+            <span class="tiny muted">the stand-in's search floor; World-Check One applies its own</span></label>
+        <label>Most hits kept per search
+            <input class="input" type="number" name="max_hits" min="1" max="20" value="{{ s.max_hits }}"{% if not can_edit %} disabled{% endif %}></label>
+    </div>
+</div>
+
+<div class="card mt-12" id="settings-azure">
+    <input type="hidden" name="services_form" value="1">
+    <div class="card-head"><div><div class="card-title">ID reading service: Azure AI Document Intelligence</div>
+        <div class="card-sub">Microsoft's prebuilt ID-document model reads the ID in place of the AI model, once chosen as the reader above; the same checks run on its read, and the AI model reads it when Azure cannot</div></div>
+        <span class="badge {{ 'emerald' if az_live else 'amber' }}">{{ 'Key entered' if az_live else 'Ready for a key' }}</span></div>
+    <div class="card-body">
+        <p class="small muted" style="margin-top:0">Create a Document Intelligence resource in the Azure portal and copy its endpoint and key. Written from Microsoft's public REST reference and not yet run against the service: check the API version and the model against your resource, then press <b>Test Azure</b>.</p>
+        <div class="settings-grid">
+            <label>Endpoint<input class="input" name="az_endpoint" value="{{ az.endpoint }}" placeholder="https://<resource>.cognitiveservices.azure.com"{% if not can_edit %} disabled{% endif %}></label>
+            <label>Key<input class="input" name="az_api_key" type="password" value="" placeholder="{{ az_key_shown or 'not entered' }}" autocomplete="new-password"{% if not can_edit %} disabled{% endif %}>
+                <span class="tiny muted">{% if az.api_key %}Stored. Leave blank to keep it. <label class="tiny"><input type="checkbox" name="az_forget" value="1"> forget it</label>{% else %}Never shown again once saved.{% endif %}</span></label>
+            <label>API version<input class="input" name="az_api_version" value="{{ az.api_version }}"{% if not can_edit %} disabled{% endif %}></label>
+            <label>Model<input class="input" name="az_model_id" value="{{ az.model_id }}"{% if not can_edit %} disabled{% endif %}></label>
+            <label>Confidence under which a field is unsure (0-1)<input class="input" type="number" step="0.05" min="0" max="1" name="az_min_confidence" value="{{ az.min_confidence }}"{% if not can_edit %} disabled{% endif %}></label>
+            <label>Price a page (USD)<input class="input" type="number" step="0.001" min="0" name="az_price_per_page" value="{{ az.price_per_page }}"{% if not can_edit %} disabled{% endif %}>
+                <span class="tiny muted">from your Azure plan: for the cost columns of Model evaluation</span></label>
+        </div>
+    </div>
+</div>
+
+<div class="card mt-12" id="settings-didit">
+    <div class="card-head"><div><div class="card-title">ID verification: Didit</div>
+        <div class="card-sub">is the ID genuine and valid: screen captures, printed copies, a replaced portrait, covered fields, the MRZ, expiry. A document Didit does not approve never closes by itself</div></div>
+        <span class="badge {{ 'emerald' if dd_live else 'amber' }}">{{ 'Key entered' if dd_live else 'Ready for a key' }}</span></div>
+    <div class="card-body">
+        <p class="small muted" style="margin-top:0">Sign up at business.didit.me and copy an API key (Developers, API keys); a sandbox key answers every check with a fixed "Approved" sample, to try it without cost. Written from Didit's public API reference and not yet run against the service. Face match and liveness need a selfie, which an uploaded ID does not bring: they are not called.</p>
+        <div class="settings-grid">
+            <label>API key<input class="input" name="dd_api_key" type="password" value="" placeholder="{{ dd_key_shown or 'not entered' }}" autocomplete="new-password"{% if not can_edit %} disabled{% endif %}>
+                <span class="tiny muted">{% if dd.api_key %}Stored. Leave blank to keep it. <label class="tiny"><input type="checkbox" name="dd_forget" value="1"> forget it</label>{% else %}Never shown again once saved.{% endif %}</span></label>
+            <label>Base URL<input class="input" name="dd_base_url" value="{{ dd.base_url }}"{% if not can_edit %} disabled{% endif %}></label>
+            <label>Path<input class="input" name="dd_path" value="{{ dd.path }}"{% if not can_edit %} disabled{% endif %}></label>
+            <label>Price a check (USD)<input class="input" type="number" step="0.01" min="0" name="dd_price_per_call" value="{{ dd.price_per_call }}"{% if not can_edit %} disabled{% endif %}></label>
+            <label><span><input type="checkbox" name="dd_auto" value="1"{% if dd.auto %} checked{% endif %}{% if not can_edit %} disabled{% endif %}> Verify every uploaded ID</span>
+                <span class="tiny muted">off: only with "Verify with Didit" on the case</span></label>
+            <label><span><input type="checkbox" name="dd_liveness" value="1"{% if dd.document_liveness %} checked{% endif %}{% if not can_edit %} disabled{% endif %}> Check for screen captures, printed copies and portrait changes</span></label>
+        </div>
+    </div>
+</div>
+
+<div class="card mt-12" id="settings-auto">
+    <div class="card-head"><div><div class="card-title">Auto-verify: the AI closes the safe cases</div>
+        <div class="card-sub">what the AI may close without an analyst; everything else goes to an analyst. Applies as the AI answers from now on</div></div>
+        <span class="badge {{ 'emerald' if s.auto_verify else 'slate' }}">{{ 'On' if s.auto_verify else 'Off' }}</span></div>
+    <div class="card-body settings-grid">
+        <input type="hidden" name="auto_form" value="1">
+        <label><span><input type="checkbox" name="auto_verify" value="1"{% if s.auto_verify %} checked{% endif %}{% if not can_edit %} disabled{% endif %}> Auto-verify on</span>
+            <span class="tiny muted">off: an analyst gives every hit its outcome</span></label>
+        <label><span><input type="checkbox" name="auto_no_hit" value="1"{% if s.auto_no_hit %} checked{% endif %}{% if not can_edit %} disabled{% endif %}> Close a case with no World-Check hit</span>
+            <span class="tiny muted">only when every ID check passed</span></label>
+        <label>Clear a hit when the AI says false positive at (%)
+            <input class="input" type="number" name="auto_min_confidence" min="50" max="100" value="{{ s.auto_min_confidence }}"{% if not can_edit %} disabled{% endif %}>
+            <span class="tiny muted">or more, and every ID check passed</span></label>
+        <label><span><input type="checkbox" name="auto_dob_differs" value="1"{% if s.auto_dob_differs %} checked{% endif %}{% if not can_edit %} disabled{% endif %}> and the record's date of birth differs from the ID's</span>
+            <span class="tiny muted">a record with no date, or the same date or year, goes to an analyst</span></label>
+        <label>Lists that always go to an analyst
+            <input class="input" name="auto_person_lists" value="{{ s.auto_person_lists }}"{% if not can_edit %} disabled{% endif %}>
+            <span class="tiny muted">words of the record's category, comma-separated (Sanctions, PEP)</span></label>
+        <label>QC sample (%)
+            <input class="input" type="number" name="auto_qc_pct" min="0" max="100" value="{{ s.auto_qc_pct }}"{% if not can_edit %} disabled{% endif %}>
+            <span class="tiny muted">of the cases the AI would close, left for an analyst to check the AI</span></label>
+    </div>
+</div>
+
+{% if can_edit %}
+<div class="row mt-12">
+    <button class="btn btn-primary" type="submit">{{ icon('check') }} Save settings</button>
+    <button class="btn btn-outline" type="submit" form="settings-test"{% if not live %} disabled title="Save a key and secret first"{% endif %}>{{ icon('activity') }} Test World-Check</button>
+    <button class="btn btn-outline" type="submit" form="settings-azure-test"{% if not az_live %} disabled title="Save the endpoint and key first"{% endif %}>{{ icon('activity') }} Test Azure</button>
+</div>
+{% else %}
+<div class="small muted mt-12">Only the QC lead changes the settings: sign in as {{ qc_names or 'the QC lead' }} to edit.</div>
+{% endif %}
+</form>
+<form method="post" action="{{ url_for('screening_settings_test') }}" id="settings-test"></form>
+<form method="post" action="{{ url_for('screening_azure_test') }}" id="settings-azure-test"></form>
+
+<div class="card mt-12 pad-0" id="settings-intake">
+    <div class="card-head" style="padding-bottom:10px"><div><div class="card-title">Intake API: the client's system sends IDs</div>
+        <div class="card-sub">every ID sent becomes a case, read, screened and decided as an upload is; the client's system reads the result back</div></div>
+        <span class="badge {{ 'emerald' if intake_keys else 'slate' }}">{{ intake_keys|length }} key{{ 's' if intake_keys|length != 1 }}</span></div>
+    {% if new_key %}
+    <div class="card-body" style="padding-top:0"><div class="note ok small" id="intake-new-key"><b>Key for {{ new_key.name }}:</b> <code>{{ new_key.key }}</code><br>Copy it now and give it to the client's system: it is kept only as a fingerprint and not shown again.</div></div>
+    {% endif %}
+    <table class="tbl">
+        <thead><tr><th>Name</th><th>Key</th><th>Created</th><th>Last case sent</th><th></th></tr></thead>
+        <tbody>
+        {% for k in intake_keys %}
+        <tr><td class="strong">{{ k.name }}</td><td class="mono">{{ k.prefix }}…</td><td class="small">{{ k.created_at }} · {{ k.created_by|who }}</td><td class="small">{{ k.last_used or '—' }}</td>
+            <td>{% if can_edit %}<form method="post" action="{{ url_for('intake_key_revoke', key_id=k.id) }}" style="margin:0" onsubmit="return confirm('Revoke this key? Calls with it are refused from now.');"><button class="btn btn-outline btn-xs" type="submit">Revoke</button></form>{% endif %}</td></tr>
+        {% else %}
+        <tr><td colspan="5" class="small muted">No key yet{% if can_edit %}: create one below{% endif %}.</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+    <div class="card-body">
+        {% if can_edit %}
+        <form method="post" action="{{ url_for('intake_key_new') }}" class="row" style="gap:8px;margin-bottom:12px">
+            <input class="input input-sm" name="name" placeholder="Which system (e.g. Onboarding app)" style="min-width:260px">
+            <button class="btn btn-primary btn-sm" type="submit">{{ icon('plus') }} Create a key</button>
+        </form>
+        {% endif %}
+        <div class="small"><b>Send an ID</b> (multipart; <code>reference</code> is the client's own ID for the customer, optional):</div>
+        <pre class="sop-text">curl -X POST {{ api_base }}/cases   -H "X-API-Key: &lt;key&gt;"   -F "image=@passport.jpg" -F "reference=CUST-1042"</pre>
+        <div class="small">or JSON: <code>{"image_base64": "...", "filename": "passport.jpg", "reference": "CUST-1042"}</code>. The answer (201) is the case. <b>Read it back</b> until <code>status</code> is <code>closed</code>:</div>
+        <pre class="sop-text">curl {{ api_base }}/cases/&lt;scan_id&gt; -H "X-API-Key: &lt;key&gt;"
+curl "{{ api_base }}/cases?reference=CUST-1042" -H "X-API-Key: &lt;key&gt;"</pre>
+        <div class="tiny muted">The case carries the read, the World-Check hits with the AI's suggestion and each outcome, <code>auto_verified</code>, the ID verification, and <code>outcome</code> once closed. A wrong or revoked key is refused (401).</div>
+    </div>
+</div>
+{% endblock %}

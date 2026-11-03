@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+{% from "_badges.html" import status_badge, outcome_badge, tag_chip, sla_chip %}
+{% block title %}My Work{% endblock %}
+
+{% block content %}
+<div class="page-head">
+    <div><h2>My Work — {{ vm.analyst.name }}</h2>
+        <p>Cases the router gave you across {{ vm.tenant_labels }}. Pull more when you have room: the hub matches your skill book ({{ vm.analyst.skills.scripts|join(', ') }}{% if vm.analyst.skills.kyb %}, KYB{% endif %}) and takes the most urgent SLA first (SOP 5.2.2, case on-demand).</p></div>
+    <div class="row">
+        <form method="post" action="{{ url_for('work_next') }}" style="margin:0">
+            <button type="submit" class="btn btn-primary btn-sm" {% if vm.headroom <= 0 or not vm.backlog_eligible %}disabled title="{{ 'You are at capacity' if vm.headroom <= 0 else 'No unassigned case matches your skill book' }}"{% endif %}>{{ icon('arrow-right') }} Get next case</button>
+        </form>
+        <form method="post" action="{{ url_for('work_request') }}" class="row" style="margin:0;gap:6px">
+            <select name="n" class="input input-sm" style="width:auto" aria-label="How many cases">
+                {% for n in (1, 2, 3, 5) %}<option value="{{ n }}" {% if n == vm.default_n %}selected{% endif %}>{{ n }}</option>{% endfor %}
+            </select>
+            <button type="submit" class="btn btn-outline btn-sm" {% if vm.headroom <= 0 or not vm.backlog_eligible %}disabled{% endif %}>Request cases</button>
+        </form>
+    </div>
+</div>
+
+<div class="kpi-strip">
+    <div class="kpi {% if vm.wip > vm.capacity %}tone-danger{% endif %}"><div class="l">Work in progress</div><div class="v">{{ vm.wip }} <span class="small muted">/ {{ vm.capacity }}</span></div>
+        <div class="cap-bar {% if vm.wip > vm.capacity %}over{% endif %}" title="{{ vm.wip }} of {{ vm.capacity }} slots in use"><i style="width:{{ [vm.pct, 100]|min }}%"></i></div>
+        <div class="hint">{{ vm.headroom }} slot(s) free · {{ vm.backlog_eligible }} eligible case(s) in the backlog</div></div>
+    <div class="kpi {% if vm.due_soon %}tone-warning{% endif %}"><div class="l">Due within 4 h</div><div class="v">{{ vm.due_soon }}</div><div class="hint">of the cases you hold</div></div>
+    <div class="kpi tone-success"><div class="l">Completed today</div><div class="v">{{ vm.completed_today }}</div><div class="hint">{{ vm.routed_today }} routed to you today</div></div>
+    <div class="kpi"><div class="l">Avg handle time</div><div class="v">{{ vm.avg_handle_h }} h</div><div class="hint">per case held, from the work log</div></div>
+</div>
+
+{% if vm.qc_feedback %}
+<div class="card mb-12 feedback-card">
+    <div class="card-head"><div class="card-title">QC feedback</div><div class="card-sub">a sampled case of yours did not pass QC — read the note, then acknowledge (SOP 2.1)</div></div>
+    <div class="card-body">
+        {% for c in vm.qc_feedback %}
+        <div class="row between" style="padding:8px 0;border-top:1px solid var(--border);gap:12px">
+            <div><b>{{ c.client.legal_name }}</b> <span class="mono small">{{ c.id }}</span> {{ status_badge(c.status) }} <span class="badge rose">{{ c.qc_reason }}</span>
+                <div class="small muted" style="margin-top:4px">{{ c.qc_comment }} — {{ c.qc_reviewer|who }}, {{ c.qc_at }}</div></div>
+            <div class="btn-group">
+                <a class="btn btn-outline btn-xs" href="{{ url_for('kyc_detail', case_id=c.id) }}">Open</a>
+                <form method="post" action="{{ url_for('kyc_qc_ack', case_id=c.id) }}" style="margin:0"><button type="submit" class="btn btn-primary btn-xs">Acknowledge</button></form>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+
+<div class="card pad-0">
+    <div class="card-head" style="padding-bottom:10px"><div class="card-title">Cases you hold</div><span class="rowcount">{{ vm.rows|length }} case(s), most urgent first</span></div>
+    <div class="tbl-scroll"><table class="tbl">
+        <thead><tr><th>Case ID</th><th>Client</th><th>Tenant</th><th>Status</th><th>Pending</th><th>Level</th><th>How it reached you</th><th>Since</th><th>SLA</th><th></th></tr></thead>
+        <tbody>
+        {% for r in vm.rows %}{% set c = r.case %}
+        <tr>
+            <td class="nowrap"><span class="cell-id">{{ c.id }}</span> {% for t in c.tags %}{{ tag_chip(t) }}{% endfor %}</td>
+            <td class="strong nowrap">{{ c.client.legal_name }}</td>
+            <td class="nowrap">{{ r.tenant_label }}</td>
+            <td>{{ status_badge(c.status) }}</td>
+            <td>{{ c.pending_reason or '-' }}</td>
+            <td class="nowrap">{{ vocab.LEVEL_LABELS.get(r.level, r.level) }}</td>
+            <td>{% if r.routing and r.routing.status == 'routed' %}<span class="badge blue" title="{{ r.routing.reason }}">{{ vocab.ROUTING_TRIGGERS.get(r.routing.trigger, r.routing.trigger) }}</span>{% else %}<span class="badge slate">Reserved / assigned</span>{% endif %}</td>
+            <td class="nowrap">{{ c.assigned_at or '-' }}</td>
+            <td>{{ sla_chip(r.sla) }}</td>
+            <td><a class="btn btn-primary btn-xs" href="{{ url_for('kyc_detail', case_id=c.id) }}">Open</a></td>
+        </tr>
+        {% else %}
+        <tr><td colspan="10"><div class="no-data">{{ icon('clipboard') }}Nothing in hand. Use Get next case.</div></td></tr>
+        {% endfor %}
+        </tbody>
+    </table></div>
+</div>
+
+<div class="card mt-12 pad-0">
+    <div class="card-head" style="padding-bottom:10px"><div class="card-title">Screening cases you are handling</div></div>
+    <div class="tbl-scroll"><table class="tbl">
+        <thead><tr><th>Screening case</th><th>Name</th><th>Level</th><th>Status</th><th>Alerts pending</th><th>KYC case SLA</th><th></th></tr></thead>
+        <tbody>
+        {% for r in vm.screening_rows %}
+        <tr>
+            <td><span class="cell-hex" title="{{ r.alert.id }}">{{ r.alert.id }}</span></td>
+            <td class="strong nowrap">{{ r.alert.screening_info.name }}</td>
+            <td>{{ r.alert.case_level }}</td>
+            <td>{{ outcome_badge(r.alert.status) }}</td>
+            <td class="num">{{ r.pending }}</td>
+            <td>{{ sla_chip(r.sla) }}</td>
+            <td><a class="btn btn-outline btn-xs" href="{{ url_for('ns_case', alert_case_id=r.alert.id) }}">Open</a></td>
+        </tr>
+        {% else %}
+        <tr><td colspan="7"><div class="no-data">{{ icon('search') }}No screening case in hand.</div></td></tr>
+        {% endfor %}
+        </tbody>
+    </table></div>
+</div>
+{% endblock %}

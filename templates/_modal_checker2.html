@@ -1,0 +1,25 @@
+{# Business Checker 2 (SOP 4.2): a second analyst signs off what Checker 1
+   approved — four-eyes on every business approval, after the risk rating has
+   been recalculated. The server refuses the analyst who was Checker 1. #}
+{% from "_modals.html" import modal_open, modal_close %}
+
+{{ modal_open('checker2-modal', 'Checker 2 Sign-off', 'sm') }}
+<form method="post" action="{{ url_for('kyc_checker2', case_id=case.id) }}">
+    <div class="modal-body">
+        {% set c1 = case.checker1 or {} %}
+        <div class="note info mb-12">Checker 1 <b>{{ c1.by|who }}</b> approved on {{ c1.at }}: <b>{{ c1.decision }}</b> — {{ c1.summary }}{% if c1.attachment %} <span class="tiny">({{ icon('paperclip') }} {{ c1.attachment }})</span>{% endif %}</div>
+        <div class="kv mb-12">
+            <div><span class="l">Risk rating:</span><span class="v strong">{{ case.risk_rating or 'not rated' }}</span></div>
+            <div><span class="l">Recalculated:</span><span class="v">{{ case.risk_recalculated_at or '-' }}</span></div>
+        </div>
+        <div class="field"><label><span class="req">*</span>Decision</label>
+            <select class="input" name="decision" required>{% for d in vocab.CHECKER2_DECISIONS %}<option>{{ d }}</option>{% endfor %}</select></div>
+        <div class="field"><label><span class="req">*</span>Comment</label>
+            <textarea class="textarea" name="comment" required placeholder="What you verified independently of Checker 1."></textarea></div>
+        <div class="small muted">Four-eyes rule: the analyst who approved as Checker 1 cannot sign off as Checker 2.</div>
+    </div>
+    <div class="modal-foot"><span class="spacer"></span>
+        <button type="button" class="btn btn-outline btn-sm" onclick="closeModal('checker2-modal')">Cancel</button>
+        <button type="submit" class="btn btn-primary btn-sm">OK</button></div>
+</form>
+{{ modal_close() }}

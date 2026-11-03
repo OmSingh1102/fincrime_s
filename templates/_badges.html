@@ -1,0 +1,44 @@
+{# ── Badges, tags and chips ───────────────────────────────────────────────────
+   `status_tone` is injected by the context processor from vocab.STATUS_TONE so
+   a status the seed adds later still gets a colour without a template change.
+#}
+{% macro status_badge(status) -%}
+<span class="badge {{ status_tone.get(status, 'slate') }}">{{ status }}</span>
+{%- endmacro %}
+
+{% macro outcome_badge(value) -%}
+{%- set tone = {'Pending': 'slate', 'False Positive': 'emerald', 'Potential Match': 'amber',
+                'True Positive': 'rose', 'Approved': 'emerald', 'Rejected': 'rose',
+                'Hit': 'rose', 'No Match': 'emerald', 'Init': 'slate', 'Handling': 'blue', 'Closed': 'emerald',
+                'Unresolved': 'orange', 'False positive': 'emerald', 'Potential match': 'amber',
+                'True positive': 'rose', 'Unspecified': 'slate', 'Low': 'emerald', 'Medium': 'amber', 'High': 'rose',
+                'Pass': 'emerald', 'Fail': 'rose', 'Approve': 'emerald', 'Reject': 'rose'}.get(value, 'slate') -%}
+<span class="badge {{ tone }}">{{ value }}</span>
+{%- endmacro %}
+
+{% macro tag_chip(tag) -%}
+{%- set tone = 'purple' if tag in ('Tier 1', 'Tier 2') else ('blue' if tag.startswith('Tier') else ('amber' if tag == 'Priority Review' else '')) -%}
+<span class="tag {{ tone }}">{{ tag }}</span>
+{%- endmacro %}
+
+{% macro type_badges(types) -%}
+{%- for t in types %}<span class="wc-badge {{ t }}">{{ t }}</span>{% endfor -%}
+{%- endmacro %}
+
+{% macro strength_bar(x) -%}
+<span class="strength" title="Match strength {{ (x * 100)|round|int }}%"><i style="width:{{ (x * 100)|round|int }}%"></i></span>
+{%- endmacro %}
+
+{% macro sla_chip(chip) -%}
+{%- if chip %}<span class="sla {{ chip.tone }}" title="{{ chip.title }}">{{ chip.text }}</span>{% endif -%}
+{%- endmacro %}
+
+{% macro workflow_badge(workflow, title='') -%}
+{%- if workflow == 'auto-verified' %}<span class="badge emerald" title="{{ title or 'Every screening alert was cleared by the AI screening rules, or there was no match' }}">{{ icon('shield-check') }} Auto-verified</span>
+{%- elif workflow == 'human-in-the-loop' %}<span class="badge violet" title="{{ title or 'An analyst has to clear at least one screening alert' }}">{{ icon('user-check') }} Human-in-the-loop</span>
+{%- elif workflow == 'waiting-on-customer' %}<span class="badge amber" title="{{ title or 'Still open: the customer was asked for a document or information, and the reply is checked when it arrives' }}">{{ icon('clock') }} Waiting on customer</span>{% endif -%}
+{%- endmacro %}
+
+{% macro hit_mark(result) -%}
+{%- if result == 'Hit' %}<span class="hit">Hit</span>{% else %}<span class="nohit">{{ result }}</span>{% endif -%}
+{%- endmacro %}

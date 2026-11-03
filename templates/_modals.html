@@ -1,0 +1,38 @@
+{# ── Modal scaffolding ─────────────────────────────────────────────────────────
+   Every dialog in the app is a .modal-overlay div toggled with the `show`
+   class — the same mechanism the ChargeShield demo uses, hoisted into macros
+   because this app has eight of them. openModal()/closeModal() live in the
+   shells' tail script.
+
+   modal_open / modal_close bracket a caller-supplied body, so a page can put a
+   whole <form> inside. confirm_dialog is the two-button "Are you sure?" shape
+   used by Reserve and Handle. `stack` renders the overlay one layer above the
+   others for a dialog that opens on top of an open modal (Resubmit).
+#}
+{% macro modal_open(id, title, size='', stack=False) -%}
+<div class="modal-overlay{% if stack %} stack{% endif %}" id="{{ id }}">
+  <div class="modal-box {{ size }}" role="dialog" aria-modal="true" aria-labelledby="{{ id }}-title">
+    <div class="modal-head">
+      <div class="modal-title" id="{{ id }}-title">{{ title }}</div>
+      <button type="button" class="modal-x" onclick="closeModal('{{ id }}')" aria-label="Close">&times;</button>
+    </div>
+{%- endmacro %}
+
+{% macro modal_close() -%}
+  </div>
+</div>
+{%- endmacro %}
+
+{% macro confirm_dialog(id, title, body, action, ok='OK', extra_fields={}) -%}
+{{ modal_open(id, title, 'sm') }}
+    <form method="post" action="{{ action }}">
+      {% for k, v in extra_fields.items() %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endfor %}
+      <div class="modal-body"><p>{{ body }}</p></div>
+      <div class="modal-foot">
+        <span class="spacer"></span>
+        <button type="button" class="btn btn-outline btn-sm" onclick="closeModal('{{ id }}')">Cancel</button>
+        <button type="submit" class="btn btn-primary btn-sm">{{ ok }}</button>
+      </div>
+    </form>
+{{ modal_close() }}
+{%- endmacro %}

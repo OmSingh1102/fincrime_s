@@ -1,0 +1,30 @@
+{% from "_modals.html" import modal_open, modal_close %}
+{{ modal_open('case-outcome', 'Change Case Outcome', '') }}
+<form method="post" action="{{ url_for('ns_case_outcome', alert_case_id=alert.id) }}">
+    <div class="modal-body">
+        {% if recommendation %}
+        <div class="reco mb-12">{{ icon('info') }} Preferred Case Outcome: <b>{{ recommendation.value }}</b><span class="small muted">— {{ recommendation.why }}</span></div>
+        {% else %}
+        <div class="note warn mb-12">Resolve every pending alert before recording the case outcome.</div>
+        {% endif %}
+        <div class="field inline"><label>Case ID</label><div class="mono small">{{ alert.id }}</div></div>
+        <div class="field inline"><label><span class="req">*</span>Case Outcome</label>
+            <select class="input" name="outcome" required>
+                {% for o in vocab.CASE_OUTCOMES %}
+                <option {% if recommendation and recommendation.value == o %}selected{% endif %}>{{ o }}{% if recommendation and recommendation.value == o %} · Recommended{% endif %}</option>
+                {% endfor %}
+            </select></div>
+        <div class="field inline"><label>Rationale</label>
+            <select class="input" name="rationale"><option value="">Select</option>{% for r in vocab.CASE_OUTCOME_RATIONALES %}<option>{{ r }}</option>{% endfor %}</select></div>
+        <div class="field inline"><label><span class="req">*</span>Comment</label>
+            <div><textarea class="textarea" name="comment" maxlength="10000" required></textarea></div></div>
+        <div class="field inline"><label>Attachment</label>
+            <div><label class="btn btn-primary btn-sm" style="cursor:pointer">{{ icon('upload') }} Upload File<input type="file" style="display:none" onchange="document.getElementById('co-attach').value=this.files[0]?this.files[0].name:''"></label>
+                <input type="hidden" name="attachment" id="co-attach">
+                <div class="tiny muted">Supported format: pdf, xlsx, csv, jpg, jpeg, gif, png, docx, txt</div></div></div>
+    </div>
+    <div class="modal-foot"><span class="spacer"></span>
+        <button type="button" class="btn btn-outline btn-sm" onclick="closeModal('case-outcome')">Cancel</button>
+        <button type="submit" class="btn btn-primary btn-sm" {% if not recommendation %}disabled{% endif %}>Submit</button></div>
+</form>
+{{ modal_close() }}

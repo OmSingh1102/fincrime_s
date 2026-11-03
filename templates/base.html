@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Compliance - FinCrime Operations Hub{% endblock %}</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    {% block extra_css %}{% endblock %}
+</head>
+<body class="console">
+<div class="app" id="app">
+    {# ── Top bar: product, tenant, product tabs, identity ── #}
+    <header class="topbar">
+        <div class="topbar-row">
+            <a class="brand" href="{{ home_url }}">
+                <img src="{{ url_for('static', filename='img/straive-logo.png') }}" alt="Straive">
+                <span class="brand-sep"></span>
+                <span class="brand-name">Compliance</span>
+            </a>
+            {% if analyst_tenants|length > 1 %}
+            <form method="post" action="{{ url_for('set_tenant') }}" class="tenant-form">
+                <input type="hidden" name="next" value="{{ request.path }}">
+                <select name="tenant" class="input input-sm" onchange="this.form.submit()" aria-label="Tenant">
+                    {% for key in analyst_tenants %}
+                    <option value="{{ key }}" {% if key == tenant %}selected{% endif %}>{{ tenants[key].label }}</option>
+                    {% endfor %}
+                </select>
+            </form>
+            {% elif tenant %}
+            <span class="tenant-name" title="Your tenant">{{ tenants[tenant].label }}</span>
+            {% endif %}
+            <nav class="top-tabs">
+                {% for tab in top_tabs %}
+                <a class="top-tab {% if tab.active %}active{% endif %}" href="{{ url_for(tab.endpoint) }}">{{ tab.label }}</a>
+                {% endfor %}
+            </nav>
+            <div class="topbar-right">
+                {% if demo_mode %}
+                <form method="post" action="{{ url_for('reset_demo') }}" class="logout-form"
+                      onsubmit="return confirm('Reset the demo? Every action taken on every case is discarded and the seed reloads.')">
+                    <button type="submit" class="tb-link btn btn-ghost btn-sm" title="Reload the seeded case book">{{ icon('refresh-cw') }} Reset demo</button>
+                </form>
+                {% endif %}
+                {% if switch_users %}
+                <form method="post" action="{{ url_for('switch_user') }}" class="logout-form">
+                    <input type="hidden" name="next" value="{{ request.path }}">
+                    <select name="analyst" class="input input-sm" onchange="this.form.submit()" aria-label="Switch analyst" title="Demo shortcut: work as another analyst">
+                        {% for a in switch_users %}
+                        <option value="{{ a.key }}" {% if a.key == session.user %}selected{% endif %}>{{ a.name }} ({{ a.roles|join('/') }})</option>
+                        {% endfor %}
+                    </select>
+                </form>
+                {% endif %}
+                <span class="user-chip"><span class="av">{{ user_initials }}</span><span class="nm">{{ session.name }}</span><span class="rl">{{ role_label }}</span></span>
+                <form method="post" action="{{ url_for('logout') }}" class="logout-form">
+                    <button type="submit" class="btn btn-ghost btn-sm btn-icon" title="Sign out" aria-label="Sign out">{{ icon('log-out') }}</button>
+                </form>
+            </div>
+        </div>
+    </header>
+
+    <div class="app-row">
+        {# ── Left rail ── #}
+        <aside class="app-side" id="app-side">
+            <nav class="app-nav">
+                {% for sec in side_nav %}
+                <div class="side-sec">
+                    <div class="side-sec-title">{{ sec.title }}</div>
+                    {% for item in sec['items'] %}
+                    <a href="{{ url_for(item.endpoint) }}" class="side-link {% if item.active %}active{% endif %}" title="{{ item.title or item.label }}"{% if item.active %} aria-current="page"{% endif %}>
+                        <span class="si">{{ icon(item.icon) }}</span><span class="lbl">{{ item.label }}</span>
+                        {% if item.count %}<span class="count">{{ item.count }}</span>{% endif %}
+                    </a>
+                    {% endfor %}
+                </div>
+                {% endfor %}
+            </nav>
+            <button type="button" class="side-collapse" id="side-collapse" onclick="toggleSide()" title="Collapse the menu" aria-label="Collapse the menu">
+                {{ icon('chevron-left') }}<span class="lbl">Collapse</span>
+            </button>
+        </aside>
+        <script>
+        /* The menu folds to a rail of icons; the choice is remembered in this
+           browser and applied before the page paints. */
+        (function () {
+            var KEY = 'fcc-side-collapsed';
+            function paint(folded) {
+                document.body.classList.toggle('side-collapsed', folded);
+                var b = document.getElementById('side-collapse');
+                if (b) { b.title = folded ? 'Expand the menu' : 'Collapse the menu'; b.setAttribute('aria-label', b.title); }
+            }
+            window.toggleSide = function () {
+                var folded = !document.body.classList.contains('side-collapsed');
+                try { localStorage.setItem(KEY, folded ? '1' : '0'); } catch (e) { /* no storage: still folds */ }
+                paint(folded);
+            };
+            try { paint(localStorage.getItem(KEY) === '1'); } catch (e) { paint(false); }
+        })();
+        </script>
+
+        <main class="app-main">
+            <div class="wrap">
+                {% include "_flashes.html" %}
+                {% block content %}{% endblock %}
+            </div>
+        </main>
+    </div>
+</div>
+
+{% include "_live_refresh.html" %}
+<script>
+/* Modal plumbing shared by every page: a .modal-overlay div toggled with the
+   `show` class (see templates/_modals.html). Escape closes the topmost. A page
+   that was redirected back after a validation failure carries ?open=<id> so
+   the modal the analyst was in reopens with the flash visible. */
+function openModal(id) { var el = document.getElementById(id); if (el) { el.classList.add('show'); var f = el.querySelector('input:not([type=hidden]):not([readonly]), select, textarea'); if (f) { try { f.focus(); } catch (e) {} } } }
+function closeModal(id) { var el = document.getElementById(id); if (el) { el.classList.remove('show'); } }
+document.addEventListener('keydown', function (e) {
+    if (e.key !== 'Escape') { return; }
+    var open = document.querySelectorAll('.modal-overlay.show');
+    if (open.length) { open[open.length - 1].classList.remove('show'); }
+});
+document.addEventListener('click', function (e) {
+    if (e.target.classList && e.target.classList.contains('modal-overlay')) { e.target.classList.remove('show'); }
+});
+(function () {
+    var p = new URLSearchParams(location.search).get('open');
+    if (p) { openModal(p); }
+})();
+</script>
+{% block extra_js %}{% endblock %}
+</body>
+</html>

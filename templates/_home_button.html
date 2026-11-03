@@ -1,0 +1,27 @@
+{# ── Global Home button ───────────────────────────────────────────────────────
+   One click back to whichever dashboard the signed-in role owns. home_url comes
+   from _inject_nav, which runs before every render, so this partial works the
+   same in a shell as it does in a standalone document.
+
+   Self-gating on home_url, so an include in a signed-out page renders nothing
+   rather than a link to somewhere the visitor cannot go.
+
+   Styles are inline, and every colour is var(--token, #fallback). rebuttal.html
+   and client_packet.html never load static/css/style.css — .back-btn there is a
+   local class that merely shares a name — so a partial that depends on no
+   stylesheet is the only form that can be included in all seven places. Same
+   reasoning as _role_switch.html.
+
+   Print: on shell pages this sits inside .header, which style.css already hides
+   when printing; in the two documents it sits inside .toolbar, hidden by their
+   own print rules. Nothing new is needed for it to stay off the paper.
+#}
+{% if home_url %}
+<a href="{{ home_url }}" class="home-btn" title="Back to your dashboard"
+   style="display:inline-flex; align-items:center; gap:6px; white-space:nowrap;
+          font-family:inherit; font-size:12px; font-weight:700; line-height:1;
+          padding:8px 14px; border-radius:9px; text-decoration:none;
+          border:1px solid var(--line-strong, #fbd9c4);
+          background:var(--c-fff4ec, #fff4ec);
+          color:var(--brand-dark, #9a3412);">&#8962; Home</a>
+{% endif %}

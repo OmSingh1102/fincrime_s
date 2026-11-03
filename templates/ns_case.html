@@ -1,0 +1,299 @@
+{% extends "base.html" %}
+{% from "_badges.html" import outcome_badge, hit_mark %}
+{% from "_modals.html" import modal_open, modal_close, confirm_dialog %}
+{% block title %}Screening case - {{ alert.screening_info.name }}{% endblock %}
+
+{% block content %}
+<div class="row between mb-12">
+    <div class="row">
+        <span class="badge blue">Case Level: {{ alert.case_level }}</span>
+        <a class="btn btn-ghost btn-xs btn-icon" href="{{ url_for('ns_case', alert_case_id=alert.id) }}" title="Refresh">{{ icon('refresh-cw') }}</a>
+        {% if alert.status == 'Init' %}
+        <button type="button" class="btn btn-primary btn-sm" onclick="openModal('handle-dialog')">Handle</button>
+        {% elif alert.status == 'Handling' %}
+        <span class="badge emerald">Handling — {{ alert.assigned_to }}</span>
+        {% else %}
+        <span class="badge slate">Closed</span>
+        {% endif %}
+        {% if alert.case_outcome and alert.case_outcome.by == vocab.SYSTEM_USER %}
+        <span class="badge violet" title="{{ alert.case_outcome.comment }}">{{ icon('check-circle') }} Auto-resolved by the AI screening rules</span>
+        {% elif counts.Pending %}
+        <span class="badge amber" title="alerts the AI screening rules left for an analyst">{{ counts.Pending }} for review</span>
+        {% endif %}
+        <a class="small" href="{{ url_for('kyc_detail', case_id=alert.kyc_case_id) }}">{{ icon('arrow-left') }} KYC case</a>
+    </div>
+</div>
+
+{# The AI Agent read the customer's documents: what they say beside the open records. #}
+{% set kw = ((kyc.ai_agent or {}).watchlist if kyc else None) %}
+{% if kw %}
+<div class="note {{ {'likely_match': 'bad', 'possible_match': 'warn'}.get(kw.finding, 'info') }} small mb-12" id="ns-ai-watch">
+    <b>AI Agent, from the customer's documents: {{ watch_labels[kw.finding] }}.</b>
+    {% for m in kw.matches %}{{ m.detail }} {% endfor %}
+    <a href="{{ url_for('kyc_detail', case_id=kyc.id) }}#agent">See the AI Agent's read</a>
+    <span class="muted">— the outcome is the analyst's.</span>
+</div>
+{% endif %}
+
+<details class="section" open>
+    <summary>Basic Information <span class="caret">{{ icon('chevron-down') }}</span></summary>
+    <div class="section-body">
+        <div class="desc cols-3">
+            <div><span class="l">Case ID</span><span class="v mono">{{ alert.id }}</span></div>
+            <div><span class="l">Assigned to</span><span class="v">{{ alert.assigned_to or '' }}</span></div>
+            <div><span class="l">Created Date</span><span class="v">{{ alert.created_at }} (UTC)</span></div>
+            <div><span class="l">Status</span><span class="v">{{ outcome_badge(alert.status) }}</span></div>
+            <div><span class="l">Is Test</span><span class="v">{{ alert.is_test }}</span></div>
+            <div><span class="l">WC Group Name</span><span class="v">{{ alert.wc_group }}</span></div>
+            <div><span class="l">NSP Group Name</span><span class="v"></span></div>
+            <div><span class="l">Business Line</span><span class="v">{{ alert.business_line }}</span></div>
+            <div><span class="l">Merchant UID</span><span class="v mono">{{ alert.merchant_uid }}</span></div>
+            <div><span class="l">Merchant ID</span><span class="v"></span></div>
+            <div><span class="l">Entity</span><span class="v"></span></div>
+            <div><span class="l">Detail ID</span><span class="v"></span></div>
+            <div><span class="l">Hit Category</span><span class="v"></span></div>
+            <div><span class="l">PI Type</span><span class="v"></span></div>
+            <div><span class="l">Data Source</span><span class="v"></span></div>
+            <div><span class="l">File ID Link</span><span class="v"></span></div>
+            <div><span class="l">Latest Updated Date</span><span class="v">{{ alert.latest_updated }} (UTC)</span></div>
+            <div><span class="l">Event</span><span class="v">{{ alert.event }}</span></div>
+            <div><span class="l">KYC Triggered</span><span class="v">{{ alert.kyc_triggered }}</span></div>
+            <div><span class="l">Customer Category</span><span class="v"></span></div>
+            <div><span class="l">Customer Type</span><span class="v">{{ alert.screening_info.search_type }}</span></div>
+            <div><span class="l">KYC Platform</span><span class="v"></span></div>
+            <div><span class="l">Need Audit</span><span class="v">{{ alert.need_audit }}</span></div>
+            <div><span class="l">Last Screen Time</span><span class="v">{{ alert.last_screen_time }} (UTC)</span></div>
+            <div><span class="l">KYC Triggered Date</span><span class="v"></span></div>
+            <div><span class="l">KYC Case</span><span class="v"><a href="{{ url_for('kyc_detail', case_id=alert.kyc_case_id) }}" class="mono">{{ alert.kyc_case_id }}</a></span></div>
+            <div><span class="l">Watchlist case</span><span class="v"><a href="{{ url_for('wc_case', wc_case_id=alert.id) }}" target="_blank" rel="noopener" title="Opens in a new tab">Open in World-Check console<span class="ext-ic">{{ icon('external-link') }}</span></a></span></div>
+        </div>
+        <div class="row mt-12">
+            <span class="small">Case outcome: {% if alert.case_outcome %}<b>{{ alert.case_outcome.value }}</b>{% else %}<span class="muted">none yet</span>{% endif %}</span>
+            <button type="button" class="btn btn-primary btn-sm" onclick="openModal('case-outcome')" {% if alert.status != 'Handling' or alert.assigned_to != actor %}disabled title="Handle the case first"{% endif %}>Change Case Outcome</button>
+            {% if alert.case_outcome %}<span class="small muted">by {{ alert.case_outcome.by }} at {{ alert.case_outcome.at }}</span>{% endif %}
+        </div>
+    </div>
+</details>
+
+<details class="section" open>
+    <summary>Screening Information <span class="caret">{{ icon('chevron-down') }}</span></summary>
+    <div class="section-body">
+        {% set s = alert.screening_info %}
+        <div class="desc cols-4">
+            <div><span class="l">Search Type</span><span class="v">{{ s.search_type }}</span></div>
+            <div><span class="l">Name</span><span class="v strong">{{ s.name }}</span></div>
+            <div><span class="l">Date of Birth</span><span class="v">{{ s.dob or '-' }}</span></div>
+            <div><span class="l">Gender</span><span class="v">{{ s.gender if s.dob else '-' }}</span></div>
+            <div><span class="l">Country Location</span><span class="v">{{ s.country or '-' }}</span></div>
+            <div><span class="l">Registered Country</span><span class="v">{{ s.registered_country or '-' }}</span></div>
+            <div><span class="l">Nationality</span><span class="v">{{ s.nationality or '-' }}</span></div>
+            <div><span class="l">Place of Birth</span><span class="v">{{ s.pob or '-' }}</span></div>
+            <div><span class="l">Identification Type</span><span class="v">{{ s.id_type or '-' }}</span></div>
+            <div><span class="l">Identification Number</span><span class="v mono">{{ s.id_number or '-' }}</span></div>
+        </div>
+    </div>
+</details>
+
+<details class="section" open>
+    <summary>List Screening ({{ alert.alerts|length }} matches found) <span class="caret">{{ icon('chevron-down') }}</span></summary>
+    <div class="section-body">
+        <div class="fgrid mb-8" style="grid-template-columns:repeat(4,minmax(0,1fr))">
+            <div class="f" style="grid-template-columns:1fr"><select class="input" id="af-auto"><option value="">Search by Auto Solved</option><option value="Smart Review">Auto solved</option><option value="Manual Review">Manual</option></select></div>
+            <div class="f" style="grid-template-columns:1fr"><input class="input" id="af-wl" placeholder="Search by Watch List ID"></div>
+            <div class="f" style="grid-template-columns:1fr"><select class="input" id="af-type"><option value="">Search by Type</option>{% for t in types %}<option>{{ t }}</option>{% endfor %}</select></div>
+            <div class="f" style="grid-template-columns:1fr"><select class="input" id="af-smart"><option value="">Search by Smart Strategy</option>{% for s in strategies %}<option>{{ s }}</option>{% endfor %}</select></div>
+        </div>
+        <button type="button" class="btn btn-primary btn-sm mb-8" onclick="afApply()">Search</button>
+        <div class="row mb-8">
+            <span class="small muted" id="sel-outcome">No alert ticked</span>
+            <button type="button" class="btn btn-primary btn-sm" onclick="openAlertOutcome()" {% if alert.status != 'Handling' or alert.assigned_to != actor %}disabled title="Handle the case first"{% endif %}>Change Alert Outcome</button>
+            <form method="post" action="{{ url_for('ns_ai_assess', alert_case_id=alert.id) }}" id="ai-form" style="margin:0" onsubmit="return aiAssess(this)">
+                <button type="submit" class="btn btn-outline btn-sm" data-model="{{ ai_model }}" {% if not ai_ready %}disabled title="{{ ai_why }}"{% else %}title="Ask {{ ai_model }} whether the ticked alerts (or every pending one) could be the client — advisory, resolves nothing"{% endif %}>{{ icon('shield-check') }} AI assessment</button>
+            </form>
+        </div>
+        <div class="tabs chips" id="alert-tabs">
+            {% for name, n in counts.items() %}
+            <button type="button" class="tab chip {% if loop.first %}active{% endif %}" data-tab="{{ name }}" onclick="afTab(this)">{{ name }} ({{ n }})</button>
+            {% endfor %}
+        </div>
+        <div class="tbl-scroll">
+            <table class="tbl dense" id="alert-table">
+                <thead><tr>
+                    <th style="width:28px"><span class="sr-hide">Open</span></th><th style="width:40px"><input type="checkbox" id="pick-all" title="Tick every alert shown" aria-label="Tick every alert shown" onchange="afPickAll(this)"></th><th>Alert ID</th><th>Vendor</th><th>Watch List ID</th><th>Alert Outcome</th><th>AI assessment</th><th>Smart Strategy</th><th>Name</th><th>Matched Alias</th>
+                    <th>Score</th><th>Type</th><th>Date of Birth (DD-MM-YYYY)</th><th>Gender</th><th>Last Resolved By</th><th>Last Resolved Time</th><th>Rationale</th><th>Risk</th><th class="sticky-right">World-Check</th>
+                </tr></thead>
+                <tbody>
+                {% for a in alert.alerts %}
+                <tr data-outcome="{{ a.outcome }}" data-mode="{{ a.review_mode }}" data-wl="{{ a.watchlist_id }}" data-type="{{ a.type }}" data-smart="{{ a.smart_strategy }}"{% if loop.first %} class="open"{% endif %}>
+                    <td><button type="button" class="row-toggle" aria-expanded="false" aria-label="Show the World-Check record behind {{ a.name }}" title="Show or hide the World-Check record" onclick="adToggle(this)">+</button></td>
+                    <td><input type="checkbox" name="pick" value="{{ a.id }}" aria-label="Tick {{ a.name }}" data-name="{{ a.name }}" data-label="{{ a.result_label }}" data-rationale="{{ a.rationale }}" data-risk="{{ a.risk_level }}" data-match="{{ a.match_id }}" data-ai="{% if a.ai_assessment %}{{ a.ai_assessment.verdict }}, {{ a.ai_assessment.confidence }}% — {{ a.ai_assessment.summary }}{% if a.ai_assessment.missing_data %} Missing: {{ a.ai_assessment.missing_data|join('; ') }}.{% endif %} ({{ a.ai_assessment.model }}){% endif %}" data-ai-outcome="{{ a.ai_assessment.suggested_outcome if a.ai_assessment else '' }}" onchange="afPick()"></td>
+                    <td><span class="cell-hex" title="{{ a.id }}">{{ a.id }}</span></td>
+                    <td><span class="badge emerald">{{ a.vendor }}</span></td>
+                    <td class="mono">{{ a.watchlist_id }}</td>
+                    <td>{{ outcome_badge(a.outcome) }}</td>
+                    <td class="nowrap">{% if a.ai_assessment %}<span class="badge {{ ai_tone.get(a.ai_assessment.verdict, 'slate') }}" title="{{ a.ai_assessment.summary }} ({{ a.ai_assessment.model }}, {{ a.ai_assessment.at }})">{{ a.ai_assessment.verdict }} · {{ a.ai_assessment.confidence }}%</span>{% else %}-{% endif %}</td>
+                    <td>{{ a.smart_strategy or '-' }}</td>
+                    <td class="nowrap">{{ a.name }}</td>
+                    <td class="nowrap">{{ a.matched_alias }}</td>
+                    <td class="num">{{ '%.2f'|format(a.score) }}</td>
+                    <td>{{ a.type }}</td>
+                    <td class="nowrap">{{ a.dob or '-' }}</td>
+                    <td>{{ a.gender }}</td>
+                    <td class="nowrap">{{ a.resolved_by or '-' }}</td>
+                    <td class="nowrap">{{ a.resolved_at or '-' }}</td>
+                    <td>{{ a.rationale or '-' }}</td>
+                    <td>{% if a.risk_level %}{{ outcome_badge(a.risk_level) }}{% else %}-{% endif %}</td>
+                    <td class="sticky-right"><a class="btn btn-outline btn-xs nowrap" href="{{ url_for('wc_match', wc_case_id=alert.id, match_id=a.match_id) }}" target="_blank" rel="noopener" title="Opens in a new tab">Open in WC<span class="ext-ic">{{ icon('external-link') }}</span></a></td>
+                </tr>
+                {% include "_alert_detail.html" %}
+                {% else %}
+                <tr><td colspan="19"><div class="no-data">{{ icon('search') }}No data</div></td></tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <div class="table-foot">
+            <span>Total: <b id="af-total">{{ alert.alerts|length }}</b></span>
+            <span class="pager" id="af-pager"></span>
+            <span>50 / Page</span>
+        </div>
+    </div>
+</details>
+
+<details class="section" open>
+    <summary>Ongoing RFI <span class="caret">{{ icon('chevron-down') }}</span></summary>
+    <div class="section-body flush">
+        <table class="tbl dense"><thead><tr><th>RFI Case ID</th><th>Date</th><th>Role</th><th>User ID</th><th>Ongoing RFI Status</th></tr></thead>
+            <tbody>{% for r in alert.rfi %}<tr><td>{{ r.id }}</td><td>{{ r.at }}</td><td>{{ r.role }}</td><td>{{ r.by }}</td><td>{{ r.status }}</td></tr>
+            {% else %}<tr><td colspan="5"><div class="no-data">{{ icon('list') }}No data</div></td></tr>{% endfor %}</tbody></table>
+    </div>
+</details>
+
+<details class="section" open>
+    <summary>Record History <span class="caret">{{ icon('chevron-down') }}</span></summary>
+    <div class="section-body">
+        <div class="timeline">
+            {% for e in alert.audit|reverse %}
+            <div class="timeline-item"><div class="event-name">{{ e.action }}</div><div class="event-meta">{{ e.at }} · {{ e.actor }}</div>{% if e.detail %}<div class="event-body">{{ e.detail }}</div>{% endif %}</div>
+            {% endfor %}
+        </div>
+    </div>
+</details>
+
+{{ confirm_dialog('handle-dialog', 'Handle Case', 'Are you sure you want to handle this case?', url_for('ns_handle', alert_case_id=alert.id), ok='OK') }}
+{% include "_modal_alert_outcome.html" %}
+{% include "_modal_case_outcome.html" %}
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function () {
+    var rows = Array.prototype.slice.call(document.querySelectorAll('#alert-table tbody tr[data-outcome]'));
+    var tab = 'All', page = 1, SIZE = 50;
+    function v(id) { return (document.getElementById(id).value || '').trim(); }
+    function visible() {
+        var auto = v('af-auto'), wl = v('af-wl'), type = v('af-type'), smart = v('af-smart');
+        return rows.filter(function (r) {
+            var d = r.dataset;
+            return (tab === 'All' || d.outcome === tab) && (!auto || d.mode === auto) && (!wl || d.wl.indexOf(wl) >= 0)
+                && (!type || d.type === type) && (!smart || d.smart === smart);
+        });
+    }
+    function paint() {
+        var vis = visible(), pages = Math.max(1, Math.ceil(vis.length / SIZE));
+        page = Math.min(page, pages);
+        rows.forEach(function (r) { r.classList.add('hidden'); });
+        vis.slice((page - 1) * SIZE, page * SIZE).forEach(function (r) { r.classList.remove('hidden'); });
+        document.getElementById('af-total').textContent = vis.length;
+        var pg = document.getElementById('af-pager'), html = '';
+        html += '<a href="#" data-p="' + (page - 1) + '" class="' + (page === 1 ? 'dis' : '') + '">&lsaquo;</a>';
+        for (var i = 1; i <= pages; i++) { html += '<a href="#" data-p="' + i + '" class="' + (i === page ? 'on' : '') + '">' + i + '</a>'; }
+        html += '<a href="#" data-p="' + (page + 1) + '" class="' + (page === pages ? 'dis' : '') + '">&rsaquo;</a>';
+        pg.innerHTML = html;
+        pg.querySelectorAll('a').forEach(function (a) { a.addEventListener('click', function (e) { e.preventDefault(); page = parseInt(a.dataset.p, 10); paint(); }); });
+        syncDetails();
+        if (window.afPick) { afPick(); }
+    }
+    /* An alert row opens to its World-Check record (templates/_alert_detail.html):
+       the + / − toggle, the detail row showing only under an open row the
+       filters and paging show, and its three tabs. The panel is held to the
+       visible width of the scrolling table, so it reads without scrolling. */
+    function syncDetails() {
+        var width = document.querySelector('#alert-table').parentElement.clientWidth;
+        rows.forEach(function (r) {
+            var det = r.nextElementSibling, b = r.querySelector('.row-toggle');
+            if (!det || !det.classList.contains('alert-detail')) { return; }
+            var open = r.classList.contains('open') && !r.classList.contains('hidden');
+            det.classList.toggle('hidden', !open);
+            if (b) { b.textContent = r.classList.contains('open') ? '−' : '+'; b.setAttribute('aria-expanded', open ? 'true' : 'false'); }
+            var wrap = det.querySelector('.ad-wrap');
+            if (wrap) { wrap.style.width = Math.max(320, width - 30) + 'px'; }
+        });
+    }
+    window.adToggle = function (btn) { btn.closest('tr').classList.toggle('open'); syncDetails(); };
+    window.adTab = function (btn) {
+        var det = btn.closest('.alert-detail');
+        det.querySelectorAll('.ad-tab').forEach(function (t) { t.classList.toggle('active', t === btn); });
+        det.querySelectorAll('.ad-pane').forEach(function (p) { p.classList.toggle('show', p.dataset.pane === btn.dataset.pane); });
+    };
+    window.addEventListener('resize', syncDetails);
+    window.afApply = function () { page = 1; paint(); };
+    window.afTab = function (btn) {
+        tab = btn.dataset.tab; page = 1;
+        document.querySelectorAll('#alert-tabs .tab').forEach(function (t) { t.classList.toggle('active', t === btn); });
+        paint();
+    };
+    /* Row check boxes: tick any number of alerts (ticks survive paging and
+       filters), untick them, or tick every alert shown from the header box;
+       Change Alert Outcome writes one outcome to all of them. */
+    function boxes() { return rows.map(function (r) { return r.querySelector('input[name=pick]'); }); }
+    function shownBoxes() { return boxes().filter(function (b) { return !b.closest('tr').classList.contains('hidden'); }); }
+    function pickedBoxes() { return boxes().filter(function (b) { return b.checked; }); }
+    window.afPick = function () {
+        var p = pickedBoxes(), out = document.getElementById('sel-outcome'), shown = shownBoxes(), all = document.getElementById('pick-all');
+        out.textContent = p.length === 0 ? 'No alert ticked' : p.length === 1 ? 'Ticked: ' + p[0].dataset.name : p.length + ' alerts ticked';
+        out.classList.toggle('muted', p.length === 0);
+        all.checked = shown.length > 0 && shown.every(function (b) { return b.checked; });
+        all.indeterminate = !all.checked && shown.some(function (b) { return b.checked; });
+    };
+    window.afPickAll = function (box) {
+        shownBoxes().forEach(function (b) { b.checked = box.checked; });
+        afPick();
+    };
+    /* AI assessment: one hidden alert_id per ticked row; none ticked = every pending alert. */
+    window.aiAssess = function (form) {
+        form.querySelectorAll('input[name=alert_id]').forEach(function (h) { h.remove(); });
+        var p = pickedBoxes();
+        if (!p.length && !confirm('Nothing is ticked. Assess every pending alert?')) { return false; }
+        p.forEach(function (b) { var h = document.createElement('input'); h.type = 'hidden'; h.name = 'alert_id'; h.value = b.value; form.appendChild(h); });
+        var btn = form.querySelector('button');
+        btn.textContent = 'Asking ' + btn.dataset.model + '\u2026';
+        setTimeout(function () { btn.disabled = true; }, 0);   /* after the submit leaves */
+        return true;
+    };
+    window.openAlertOutcome = function () {
+        var p = pickedBoxes();
+        if (!p.length) { alert('Tick at least one alert (the check box at the left of its row) first.'); return; }
+        var ids = document.getElementById('ao-alert-ids');
+        ids.innerHTML = '';
+        p.forEach(function (b) { var h = document.createElement('input'); h.type = 'hidden'; h.name = 'alert_id'; h.value = b.value; ids.appendChild(h); });
+        document.getElementById('ao-alert-label').textContent = p.length === 1 ? p[0].value
+            : p.length + ' alerts: ' + p.map(function (b) { return b.dataset.name; }).join(', ');
+        var note = document.getElementById('ao-multi');
+        note.style.display = p.length > 1 ? '' : 'none';
+        note.textContent = 'The label, rationale, comment and risk below are written to all ' + p.length + ' ticked alerts.';
+        var first = p[0];
+        var sel = function (id, val) { var el = document.getElementById(id); if (el && val) { el.value = val; } };
+        sel('ao-label', first.dataset.label); sel('ao-rationale', first.dataset.rationale); sel('ao-risk', first.dataset.risk);
+        /* The model's view of the first ticked alert, and its suggested label when the console recorded none. */
+        var ai = document.getElementById('ao-ai'), aiText = p.length === 1 ? (first.dataset.ai || '') : '';
+        ai.style.display = aiText ? '' : 'none';
+        ai.textContent = aiText ? 'Model assessment: ' + aiText : '';
+        if (!first.dataset.label && first.dataset.aiOutcome) { sel('ao-label', first.dataset.aiOutcome); }
+        var link = document.getElementById('ao-wc-link'); if (link) { link.href = link.dataset.base + first.dataset.match; }
+        openModal('alert-outcome');
+    };
+    paint();
+})();
+</script>
+{% endblock %}

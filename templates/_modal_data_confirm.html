@@ -1,0 +1,179 @@
+{# The Data Confirm modal (SOP 4.1.2): the document on the left, the three
+   fields to confirm on the right. Each field starts read-only with a Confirm
+   button; Confirm greys the field and turns the button into Edit; Edit makes
+   the field writable again. OK stays disabled until all three are confirmed
+   — the server re-checks the same flags. Resubmit, Escalate and RFI open
+   their own dialogs one layer above this one, each with its own form. #}
+{% from "_modals.html" import modal_open, modal_close %}
+{% from "_viewer.html" import viewer_tools %}
+
+{{ modal_open('dc-modal', 'Data Confirm Modal', 'xl') }}
+<form method="post" action="{{ url_for('kyc_data_confirm', case_id=case.id) }}" id="dc-form">
+    <div class="modal-body">
+        <div class="viewer">
+            <div>
+                <div class="viewer-stage" id="dc-stage">
+                    <img id="dc-img" src="{{ url_for('document_svg', case_id=case.id, doc_id=case.documents[0].id) }}" alt="Document">
+                    {{ viewer_tools(url_for('document_svg', case_id=case.id, doc_id=case.documents[0].id)) }}
+                </div>
+                <div class="thumbs">
+                    {% for d in case.documents %}
+                    <button type="button" class="thumb {% if loop.first %}on{% endif %}" data-src="{{ url_for('document_svg', case_id=case.id, doc_id=d.id) }}" onclick="dcShow(this)" title="{{ d.name }} — {{ d.side }}">
+                        <img src="{{ url_for('document_svg', case_id=case.id, doc_id=d.id) }}" alt="">
+                        <span class="lab">{{ 'POA' if d.category == 'ProofOfAddress' else 'ID' }}</span>
+                    </button>
+                    {% endfor %}
+                </div>
+                {% if case.poa_required %}
+                <div class="check-list mt-8" id="poa-checks">
+                    <div class="check-head"><span>Proof of address checks (SOP 4.1.2 step 1)</span>
+                        <button type="button" class="btn btn-link btn-sm" id="cf-poa-btn" onclick="cfToggle('poa')" {% if poa_failed %}disabled title="A check failed — use Resubmit POA, or Escalate under the sanctioned-country rule"{% endif %}>Confirm POA</button>
+                        <input type="hidden" name="poa_ok" id="cf-poa-ok" value="0"><input type="hidden" id="cf-poa" value="checked">
+                    </div>
+                    {% for c in poa_checks %}<div class="check-row {{ 'ok' if c.ok else 'bad' }}"><span class="mark">{{ icon('check') if c.ok else icon('x') }}</span><span class="lbl">{{ c.label }}</span><span class="det">{{ c.detail }}</span></div>{% endfor %}
+                </div>
+                {% endif %}
+            </div>
+            <div>
+                {% for field, key, label, itype in confirm_fields %}
+                <div class="cf-row">
+                    <div class="lbl"><span class="req">*</span>{{ label }}</div>
+                    <input class="input" type="{{ itype }}" name="{{ field }}" id="cf-{{ field }}" value="{{ case.client[key] }}" readonly>
+                    <button type="button" class="btn btn-link btn-sm" id="cf-{{ field }}-btn" onclick="cfToggle('{{ field }}')">Confirm</button>
+                    <input type="hidden" name="{{ field }}_ok" id="cf-{{ field }}-ok" value="0">
+                </div>
+                {% endfor %}
+                {% if case.client.native_name %}{% set latin = case.client.native_name|translit %}
+                <div class="small muted mb-8">Name on the document (native script): <b>{{ case.client.native_name }}</b>{% if latin != case.client.native_name %} · suggested transliteration <b>{{ latin|upper }}</b> <button type="button" class="btn btn-link btn-xs" onclick='cfUse("name", {{ latin|upper|tojson }})'>Use</button>{% endif %}</div>
+                {% endif %}
+                <div class="small muted mb-12">Confirm each field against the document. Name must be in English (transliterate if needed). Birthday: {{ vocab.DATE_FORMAT_NOTES.get(case.client.id_type, 'check the date format on the document') }}; the system stores YYYY-MM-DD.</div>
+                <div class="field">
+                    <label for="dc-summary">Summary</label>
+                    <textarea class="textarea" id="dc-summary" name="summary" maxlength="200" placeholder="Manual Input" oninput="dcCount()"></textarea>
+                    <div class="counter"><span id="dc-count">0</span>/200</div>
+                </div>
+                <label class="dropzone">
+                    <input type="file" accept=".pdf" onchange="dcFile(this)">
+                    <span class="plus">+</span>
+                    <span>Click or drag file to this area to upload</span>
+                    <span class="tiny">file type: .pdf</span>
+                    <span class="fname" id="dc-fname"></span>
+                </label>
+                <input type="hidden" name="attachment_name" id="dc-attachment">
+            </div>
+        </div>
+    </div>
+    <div class="modal-foot">
+        <div class="left">
+            <button type="button" class="btn btn-primary btn-sm" onclick="openModal('dc-resubmit')">Resubmit</button>
+            <button type="button" class="btn btn-primary btn-sm" onclick="openModal('dc-escalate')">Escalate</button>
+            <button type="button" class="btn btn-primary btn-sm" onclick="openModal('rfi-modal')">RFI</button>
+        </div>
+        <span class="spacer"></span>
+        <button type="button" class="btn btn-outline btn-sm" onclick="closeModal('dc-modal')">Cancel</button>
+        <button type="submit" class="btn btn-primary btn-sm" id="dc-ok" disabled title="Confirm all three fields first">OK</button>
+    </div>
+</form>
+{{ modal_close() }}
+
+{# Resubmit — stacked over the confirm modal #}
+{{ modal_open('dc-resubmit', 'Resubmit', 'sm', stack=True) }}
+<form method="post" action="{{ url_for('kyc_resubmit', case_id=case.id) }}">
+    <div class="modal-body">
+        {% if id_resubmit_reason %}<div class="note info small mb-8" id="rs-suggested">Filled in from the AI Agent's read of the ID. Check the image before you send it.</div>{% endif %}
+        <div class="field">
+            <label><span class="req">*</span>Decision</label>
+            <div class="stack" style="margin-top:4px">
+                <label class="check"><input type="checkbox" name="decision" value="Resubmit ID" onchange="rsToggle()" {% if id_resubmit_reason %}checked{% endif %}> Resubmit ID</label>
+                <label class="check"><input type="checkbox" name="decision" value="Resubmit POA" onchange="rsToggle()" {% if not case.poa_required %}disabled title="No POA on this case"{% elif poa_resubmit_reason %}checked{% endif %}> Resubmit POA</label>
+            </div>
+        </div>
+        <div class="field" id="rs-id" style="display:none">
+            <label><span class="req">*</span>Resubmit ID Reason</label>
+            <select class="input" name="id_reason">
+                <option value="">Select</option>
+                {% for r in vocab.RESUBMIT_ID_REASONS %}<option {% if r == id_resubmit_reason %}selected{% endif %}>{{ r }}</option>{% endfor %}
+            </select>
+        </div>
+        <div class="field" id="rs-poa" style="display:none">
+            <label><span class="req">*</span>Resubmit POA Reason</label>
+            <select class="input" name="poa_reason">
+                <option value="">Select</option>
+                {% for r in sop.resubmit_poa_reasons() %}<option {% if r == poa_resubmit_reason %}selected{% endif %}>{{ r }}</option>{% endfor %}
+            </select>
+        </div>
+        <div class="field"><label>Specify the reason</label><textarea class="textarea" name="note" maxlength="200" placeholder="Optional note for the audit trail"></textarea></div>
+    </div>
+    <div class="modal-foot"><span class="spacer"></span>
+        <button type="button" class="btn btn-outline btn-sm" onclick="closeModal('dc-resubmit')">Cancel</button>
+        <button type="submit" class="btn btn-primary btn-sm">OK</button></div>
+</form>
+{{ modal_close() }}
+
+{# Escalate — stacked over the confirm modal #}
+{{ modal_open('dc-escalate', 'Escalate to L2', 'sm', stack=True) }}
+<form method="post" action="{{ url_for('kyc_escalate', case_id=case.id) }}">
+    <div class="modal-body">
+        <div class="field"><label><span class="req">*</span>Reason</label>
+            <select class="input" name="reason" required onchange="escTypology()" id="esc-reason">{% for r in vocab.ESCALATE_REASONS %}<option {% if poa_sanction_fail and r.startswith('Sanctioned') %}selected{% endif %}>{{ r }}</option>{% endfor %}</select></div>
+        <div class="field" id="esc-typology"><label><span class="req">*</span>Fraud typology <span class="tiny muted">— required for a Fraud ID escalation; it is what the fraud tracker records (SOP 4.1.3 §2.1.1)</span></label>
+            <select class="input" name="fraud_typology"><option value="">Select</option>{% for t in vocab.FRAUD_TYPOLOGIES %}<option>{{ t }}</option>{% endfor %}</select></div>
+        <div class="field"><label><span class="req">*</span>Comment</label>
+            <textarea class="textarea" name="comment" required placeholder="What did you find, and why does it need L2?"></textarea></div>
+        <div class="small muted">Escalation starts the 14-day EDD clock and hands the case to the L2 queue.</div>
+    </div>
+    <div class="modal-foot"><span class="spacer"></span>
+        <button type="button" class="btn btn-outline btn-sm" onclick="closeModal('dc-escalate')">Cancel</button>
+        <button type="submit" class="btn btn-primary btn-sm">Escalate</button></div>
+</form>
+{{ modal_close() }}
+
+<script>
+(function () {
+    var fields = [{% for field, key, label, itype in confirm_fields %}'{{ field }}'{% if not loop.last %}, {% endif %}{% endfor %}]{% if case.poa_required %}.concat(['poa']){% endif %};
+
+    function paintOk() {
+        var all = fields.every(function (f) { return document.getElementById('cf-' + f + '-ok').value === '1'; });
+        var ok = document.getElementById('dc-ok');
+        ok.disabled = !all;
+        ok.title = all ? '' : 'Confirm every field first';
+    }
+    window.cfToggle = function (f) {
+        var input = document.getElementById('cf-' + f), flag = document.getElementById('cf-' + f + '-ok'), btn = document.getElementById('cf-' + f + '-btn');
+        if (flag.value === '1') {
+            flag.value = '0'; input.readOnly = false; input.classList.remove('confirmed'); btn.textContent = (f === 'poa') ? 'Confirm POA' : 'Confirm'; if (f !== 'poa') { input.focus(); }
+        } else {
+            if (!input.value.trim()) { input.focus(); return; }
+            flag.value = '1'; input.readOnly = true; input.classList.add('confirmed'); btn.textContent = (f === 'poa') ? 'Undo' : 'Edit';
+        }
+        paintOk();
+    };
+    window.dcShow = function (btn) {
+        viewerInit(document.getElementById('dc-stage')).show(btn.dataset.src);   /* templates/_viewer.html */
+        document.querySelectorAll('.thumb').forEach(function (t) { t.classList.toggle('on', t === btn); });
+    };
+    window.dcCount = function () { document.getElementById('dc-count').textContent = document.getElementById('dc-summary').value.length; };
+    window.dcFile = function (input) {
+        var name = input.files && input.files[0] ? input.files[0].name : '';
+        document.getElementById('dc-fname').textContent = name; document.getElementById('dc-attachment').value = name;
+    };
+    window.rsToggle = function () {
+        var id = document.querySelector('input[name=decision][value="Resubmit ID"]').checked;
+        var poa = document.querySelector('input[name=decision][value="Resubmit POA"]').checked;
+        document.getElementById('rs-id').style.display = id ? '' : 'none';
+        document.getElementById('rs-poa').style.display = poa ? '' : 'none';
+    };
+    window.cfUse = function (f, v) {
+        var flag = document.getElementById('cf-' + f + '-ok');
+        if (flag.value === '1') { cfToggle(f); }
+        var input = document.getElementById('cf-' + f); input.value = v; input.focus();
+    };
+    window.escTypology = function () {
+        var sel = document.getElementById('esc-reason'), box = document.getElementById('esc-typology');
+        if (sel && box) { box.style.opacity = sel.value.indexOf('Fraud') === 0 ? '1' : '.75'; }
+    };
+    paintOk();
+    rsToggle();
+    escTypology();
+})();
+</script>

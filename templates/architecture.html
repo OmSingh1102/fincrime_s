@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% block title %}Architecture{% endblock %}
+
+{% block content %}
+<div class="page-head">
+    <div><h2>Architecture</h2>
+        <p>What the Screening cases flow is built of: which steps are a model's judgement, which are fixed code, which are people, and where real services connect through their APIs. Models, the SOP and the World-Check account are settings a team changes in the console, not code.</p></div>
+</div>
+
+{# ── the pipeline ── #}
+<div class="card mt-12" id="arch-pipeline">
+    <div class="card-head"><div class="card-title">How an uploaded ID goes through</div>
+        <div class="row" style="gap:6px;flex-wrap:wrap">
+            <span class="arch-key ai">AI model</span><span class="arch-key rule">Rules (code)</span><span class="arch-key api">External API</span><span class="arch-key sim">Simulated</span><span class="arch-key person">People</span>
+        </div></div>
+    <div class="card-body">
+        <div class="arch-flow">
+            <div class="arch-step person"><b>1. Upload</b><span>An analyst uploads one photo or scan of an ID on <a href="{{ url_for('scan_id') }}">Screening cases</a>; every upload is a case</span></div>
+            <div class="arch-arrow">→</div>
+            <div class="arch-step rule"><b>2. Image preparation</b><span>Checked, turned upright, resized, EXIF and GPS removed (Pillow)</span></div>
+            <div class="arch-arrow">→</div>
+            <div class="arch-step ai api"><b>3. Reading the ID</b><span>{{ reader_label }} through Straive's LLM Foundry API reads every printed field and the MRZ, and says what spoils the photo{% if not llm_ready %} <em>(no key here)</em>{% endif %}</span></div>
+            <div class="arch-arrow">→</div>
+            <div class="arch-step rule"><b>4. Checks on the read</b><span>MRZ check digits, the printed fields against the zone, expiry, age, not an identity document</span></div>
+            <div class="arch-arrow">→</div>
+            <div class="arch-step {{ 'api' if wc_live else 'sim' }}"><b>5. World-Check search</b><span>{% if wc_live %}World-Check One, by its API{% else %}The stand-in World-Check: the World-Check records of the client's 1,000 cases, searched by name as World-Check does{% endif %}</span></div>
+            <div class="arch-arrow">→</div>
+            <div class="arch-step ai"><b>6. AI decision on each hit</b><span>{{ decider_label }} under the current <a href="{{ url_for('screening_sop') }}">Screening SOP</a>, with the most similar resolved cases: clear, true match, ask the customer or escalate, with its reasons</span></div>
+            <div class="arch-arrow">→</div>
+            <div class="arch-step rule"><b>7. Auto-verify</b><span>The AI screening rule closes the safe cases: no hit, or the AI sure it is a different person with a different date of birth and not a sanctions or PEP record (all set on <a href="{{ url_for('screening_settings') }}#settings-auto">Settings</a>), with a QC sample left for an analyst</span></div>
+            <div class="arch-arrow">→</div>
+            <div class="arch-step person"><b>8. Alert outcome</b><span>An analyst gives the rest their outcome on the name-screening page or in the World-Check console; the case closes when every hit has one</span></div>
+        </div>
+        <div class="arch-side">
+            <div class="arch-step rule"><b>Settings, not code</b><span>The reading and deciding models, how many similar cases go in the prompt, the name-match floor, how many hits are kept, the World-Check account: on <a href="{{ url_for('screening_settings') }}">Settings</a></span></div>
+            <div class="arch-step person"><b>The SOP, in versions</b><span>The QC lead edits the screening SOP in the console; saving a version sends every open case's unconfirmed hits to the AI again under it</span></div>
+            <div class="arch-step ai"><b>Measured as it runs</b><span>Both models are measured on the uploads themselves on the <a href="{{ url_for('model_evaluation') }}">Model evaluation</a> page, the deciding one against the analysts' alert outcomes{% if headline %}: {{ headline }}{% endif %}</span></div>
+        </div>
+    </div>
+</div>
+
+{# ── intelligence and workflow ── #}
+<div class="card mt-12 pad-0" id="arch-split">
+    <div class="card-head" style="padding-bottom:10px"><div class="card-title">Where it is a model's judgement, and where it is workflow</div>
+        <div class="card-sub">the models read and suggest; code checks; people decide</div></div>
+    <table class="tbl">
+        <thead><tr><th>Step</th><th>How it is decided</th><th>Kind</th></tr></thead>
+        <tbody>
+        <tr><td class="strong">Reading the ID</td><td>A vision model transcribes each printed field and the MRZ, marks what it is unsure of and names what spoils the photo (blur, glare, cut off, covered)</td><td><span class="arch-key ai">AI model</span></td></tr>
+        <tr><td class="strong">Checks on the read</td><td>Code: the MRZ check digits (the ICAO formula), the printed fields against the zone, expiry, age</td><td><span class="arch-key rule">Rules</span></td></tr>
+        <tr><td class="strong">Searching World-Check</td><td>A name search (word order, diacritics, initials set aside); the date of birth and country are shown beside each hit, never used to drop one</td><td>{% if wc_live %}<span class="arch-key api">External API</span>{% else %}<span class="arch-key sim">Simulated</span>{% endif %}</td></tr>
+        <tr><td class="strong">Deciding each hit</td><td>A model given the SOP, the client's variance reference and the most similar resolved cases; a suggestion with its reasons</td><td><span class="arch-key ai">AI model</span></td></tr>
+        <tr><td class="strong">The SOP</td><td>Written by the QC lead on the Screening SOP page, kept as versions</td><td><span class="arch-key person">People</span></td></tr>
+        <tr><td class="strong">Closing the safe cases</td><td>The AI screening rule on the AI's answer: the confidence it needs, the date of birth differing, the lists that always go to a person, the QC sample, all on Settings</td><td><span class="arch-key rule">Rules</span></td></tr>
+        <tr><td class="strong">The alert outcome</td><td>An analyst, with the AI's suggestion prefilled; whether they agreed with it is kept</td><td><span class="arch-key person">People</span></td></tr>
+        </tbody>
+    </table>
+</div>
+
+{# ── integrations ── #}
+<div class="card mt-12 pad-0" id="arch-apis">
+    <div class="card-head" style="padding-bottom:10px"><div class="card-title">Services and their APIs</div>
+        <div class="card-sub">existing market solutions take over the steps this demo stands in for; each connects through an adapter</div></div>
+    <table class="tbl">
+        <thead><tr><th>Service</th><th>In this demo</th><th>Production: an existing solution, by API</th><th>Status</th></tr></thead>
+        <tbody>
+        <tr><td class="strong">Language and vision models</td><td>Straive's LLM Foundry gateway: Claude, GPT and Gemini models</td><td>The same gateway</td><td>{% if llm_ready %}<span class="badge emerald">Connected</span>{% else %}<span class="badge slate">Needs LLM_FOUNDRY_KEY</span>{% endif %}</td></tr>
+        <tr><td class="strong">Reading the ID (OCR)</td><td>The vision model above, or Azure AI Document Intelligence (prebuilt ID model) chosen as the reader; the AI model reads when Azure cannot</td><td>Azure AI Document Intelligence (AWS Textract AnalyzeID or Google Document AI the same way)</td><td>{% if az_live %}<span class="badge emerald">Azure key entered</span>{% else %}<span class="badge amber">Azure ready for a key: <a href="{{ url_for('screening_settings') }}#settings-azure">Settings</a> (not yet run against the service)</span>{% endif %}</td></tr>
+        <tr><td class="strong">ID verification (genuine, unaltered, valid)</td><td>Didit's ID Verification API on each uploaded ID; a document it does not approve never closes by itself. Face match and liveness need a selfie</td><td>Didit (Onfido, Jumio or Veriff the same way)</td><td>{% if dd_live %}<span class="badge emerald">Didit key entered</span>{% else %}<span class="badge amber">Didit ready for a key: <a href="{{ url_for('screening_settings') }}#settings-didit">Settings</a> (not yet run against the service)</span>{% endif %}</td></tr>
+        <tr><td class="strong">Watchlist screening</td><td>{% if wc_live %}World-Check One, with the account on Settings{% else %}The stand-in World-Check: the World-Check records of the client's 1,000 cases{% endif %}</td><td>LSEG World-Check One API</td><td>{% if wc_live %}<span class="badge emerald">Account entered</span>{% else %}<span class="badge amber">Ready for a key: enter it on <a href="{{ url_for('screening_settings') }}">Settings</a> (not yet run against the service)</span>{% endif %}</td></tr>
+        <tr><td class="strong">Case intake</td><td>An analyst uploads the ID, or the client's system sends it to the intake API (<code>POST /api/v1/cases</code>, a key per system) and reads the case back</td><td>The client's onboarding system</td><td><span class="badge emerald">Working</span> <span class="small muted">{{ intake_n }} key{{ 's' if intake_n != 1 }} (<a href="{{ url_for('screening_settings') }}#settings-intake">Settings</a>)</span></td></tr>
+        </tbody>
+    </table>
+</div>
+{% endblock %}

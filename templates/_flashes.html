@@ -1,0 +1,38 @@
+{# Flash messages, rendered by every shell as notifications.
+
+   Fixed at the top right, above any open modal (a validation error reopens
+   the analyst's modal, so the message must sit over it), each one lingers
+   long enough to read — errors longer, and longer still for a longer text —
+   pauses while hovered, and closes on × or fades on its own. The progress
+   bar's CSS animation is the clock: hovering pauses it, animationend closes.
+
+   The inner structure (role="status" > icon span, message span) is what the
+   tests and the demo scripts read; keep it.
+
+   Until this existed only counter_evidence.html called get_flashed_messages,
+   so every flash raised anywhere else was queued and then silently dropped on
+   the next page. The routes were reporting honestly to nobody. #}
+{% with messages = get_flashed_messages(with_categories=true) %}
+{% if messages %}
+<div class="toasts" id="toasts" aria-live="polite">
+    {% for category, message in messages %}
+    <div class="toast {{ category }}" role="status" data-linger="{{ (8000 + 45 * message|length) if category == 'error' else (5000 + 30 * message|length) }}">
+        <span class="toast-ic" aria-hidden="true">{% if category == 'error' %}&#9888;{% elif category == 'success' %}&#10003;{% else %}&#8505;{% endif %}</span>
+        <span>{{ message }}</span>
+        <button type="button" class="toast-x" aria-label="Dismiss" onclick="toastClose(this.parentNode)">&times;</button>
+        <i class="toast-bar"></i>
+    </div>
+    {% endfor %}
+</div>
+<script>
+(function () {
+    window.toastClose = function (t) { t.classList.add('hide'); setTimeout(function () { t.remove(); }, 320); };
+    document.querySelectorAll('#toasts .toast').forEach(function (t) {
+        var bar = t.querySelector('.toast-bar');
+        bar.style.animationDuration = (parseInt(t.dataset.linger, 10) || 6000) + 'ms';
+        bar.addEventListener('animationend', function () { toastClose(t); });
+    });
+})();
+</script>
+{% endif %}
+{% endwith %}

@@ -1,0 +1,20 @@
+{# ── Chart primitives (CSS only, no JS library) ──────────────────────────────
+   hbars: a magnitude comparison — one hue per card, thin bars, the value in
+   text ink beside the bar, a hover title on every row. Callers pass the rows
+   [(label, n)] and, optionally, the one colour the card uses.
+   tier_bars: the same with a second number (breached) shown as a labelled
+   status chip beside the count — status colour carries state, never a series.
+#}
+{% macro hbars(rows, tone='') %}
+{% set mx = rows|map(attribute=1)|max if rows else 1 %}
+{% for label, n in rows %}
+<div class="hbar" title="{{ label }}: {{ n }}"><span class="ellipsis" title="{{ label }}">{{ label }}</span><span class="bar"><i style="width:{{ (100 * n / (mx or 1))|round|int }}%{% if tone %};background:{{ tone }}{% endif %}"></i></span><span class="n">{{ n }}</span></div>
+{% else %}<div class="no-data">No data</div>{% endfor %}
+{% endmacro %}
+
+{% macro tier_bars(rows, tone='') %}
+{% set mx = rows|map(attribute=1)|max if rows else 1 %}
+{% for label, n, late in rows %}
+<div class="hbar wide" title="{{ label }}: {{ n }} open{% if late %}, {{ late }} past SLA{% endif %}"><span class="ellipsis" title="{{ label }}">{{ label }}</span><span class="bar"><i style="width:{{ (100 * n / (mx or 1))|round|int }}%{% if tone %};background:{{ tone }}{% endif %}"></i></span><span class="n">{{ n }}{% if late %} <span class="sla late">{{ late }} late</span>{% endif %}</span></div>
+{% else %}<div class="no-data">No data</div>{% endfor %}
+{% endmacro %}

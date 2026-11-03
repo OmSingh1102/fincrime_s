@@ -1,0 +1,127 @@
+{# The row an alert opens to on the screening case, as the real case has it:
+   Smart Review Results (what the AI screening rules say about this record,
+   submitted against matched data, the AI Agent's finding from the
+   documents), Overview (the World-Check record's key data, aliases, further
+   information and keywords) and Others (sources, PEP role, the record).
+   Included inside the alert loop: `a` is the alert, details[a.id] what
+   app._alert_details read for it. #}
+{% set d = details[a.id] %}{% set m = d.m %}
+<tr class="alert-detail hidden" data-for="{{ a.id }}">
+<td colspan="19"><div class="ad-wrap">
+{% if not m %}
+    <div class="no-data">{{ icon('search') }}No World-Check record behind this alert</div>
+{% else %}
+{% set kd = m.key_data %}{% set fi = m.further_info %}
+{% set locs = kd.locations or ([kd.location] if kd.location else []) %}
+<div class="ad-tabs" role="tablist">
+    <button type="button" class="ad-tab" data-pane="smart" onclick="adTab(this)">Smart Review Results</button>
+    <button type="button" class="ad-tab active" data-pane="overview" onclick="adTab(this)">Overview</button>
+    <button type="button" class="ad-tab" data-pane="others" onclick="adTab(this)">Others</button>
+</div>
+
+<div class="ad-pane" data-pane="smart">
+    <div class="ad-card">
+        <h5>AI screening rules</h5>
+        <p class="small mb-8">{% if a.smart_strategy %}Cleared by the rule <b>{{ a.smart_strategy }}</b>, as a false positive.{% elif a.outcome == 'Pending' %}No rule cleared this record: it waits for an analyst.{% else %}Resolved by {{ a.resolved_by or 'an analyst' }}: {{ a.outcome }}.{% endif %}</p>
+        <table class="ad-table"><thead><tr><th>Rule</th><th>Verdict</th><th>Why</th></tr></thead><tbody>
+        {% for r in d.rules %}<tr><td class="nowrap">{{ r.label }}</td><td class="nowrap"><span class="badge {{ {'fires': 'emerald', 'vetoed': 'rose', 'off': 'slate'}.get(r.verdict, 'amber') }}">{{ r.verdict }}</span></td><td>{{ r.detail }}</td></tr>{% endfor %}
+        </tbody></table>
+    </div>
+    <div class="ad-card">
+        <h5>Submitted against matched data</h5>
+        <table class="ad-table"><thead><tr><th></th><th>Submitted Data</th><th>Matched Data</th></tr></thead><tbody>
+        {% for row in d.compare %}<tr><td class="nowrap muted">{{ row.field }}</td><td>{% if row.match %}<span class="tone-ok">&#10003;</span> {% endif %}{{ row.submitted or '-' }}</td><td>{{ row.matched or '-' }}</td></tr>{% endfor %}
+        </tbody></table>
+    </div>
+    {% if d.finding %}
+    <div class="ad-card"><h5>AI Agent, from the documents</h5>
+        <p class="small"><span class="badge {{ {'likely_match': 'rose', 'possible_match': 'amber', 'likely_different': 'emerald', 'unread': 'slate'}[d.finding.finding] }}">{{ watch_labels[d.finding.finding] }}</span> {{ d.finding.detail }}</p></div>
+    {% endif %}
+    {% if a.ai_assessment %}
+    <div class="ad-card"><h5>AI assessment ({{ a.ai_assessment.model }})</h5>
+        <p class="small"><span class="badge {{ ai_tone.get(a.ai_assessment.verdict, 'slate') }}">{{ a.ai_assessment.verdict }} · {{ a.ai_assessment.confidence }}%</span> {{ a.ai_assessment.summary }}</p></div>
+    {% endif %}
+</div>
+
+<div class="ad-pane show" data-pane="overview">
+    <div class="ad-cols">
+        <div>
+            <h4 class="ad-h">Key Data</h4>
+            <div class="ad-card">
+                <h5>Basic Info</h5>
+                <div class="ad-kv">
+                    <div><span class="l">Name</span><span class="v">{{ m.name }}</span></div>
+                    <div><span class="l">Category</span><span class="v">{{ kd.category or '-' }}</span></div>
+                    <div><span class="l">Sub Category</span><span class="v">{{ kd.sub_category or '-' }}</span></div>
+                    <div><span class="l">PEP Status</span><span class="v">{{ kd.pep_status or '-' }}</span></div>
+                    <div><span class="l">Special Interest Categories</span><span class="v">{{ kd.special_interest|join(', ') if kd.special_interest else '-' }}</span></div>
+                    <div><span class="l">Gender</span><span class="v">{{ m.gender|title if m.gender else '-' }}</span></div>
+                    <div><span class="l">Registered Country</span><span class="v">-</span></div>
+                    <div><span class="l">Title</span><span class="v">-</span></div>
+                    <div><span class="l">Position</span><span class="v">{{ kd.position or '-' }}</span></div>
+                    <div><span class="l">Deceased Date</span><span class="v">-</span></div>
+                </div>
+                <h5>Record Update</h5>
+                <div class="ad-kv">
+                    <div><span class="l">Update Categorization</span><span class="v">C6</span></div>
+                    <div><span class="l">Entered Date</span><span class="v">{{ m.entered or '-' }}</span></div>
+                    <div><span class="l">Updated Date</span><span class="v">{{ m.updated or '-' }}</span></div>
+                </div>
+                <h5>Date Details</h5>
+                {% if m.dobs %}<table class="ad-table"><thead><tr><th>Date Type</th><th>Date</th></tr></thead><tbody>
+                    {% for x in m.dobs %}<tr><td>Date of Birth</td><td>{{ x }}</td></tr>{% endfor %}</tbody></table>
+                {% else %}<div class="no-data">{{ icon('list') }}No data</div>{% endif %}
+                <h5>Location Details <span class="muted">Total: {{ locs|length + (1 if m.citizenship else 0) }}</span></h5>
+                <table class="ad-table"><thead><tr><th>Country Type</th><th>Street</th><th>City</th><th>Region</th><th>Country</th><th>Postal Code</th></tr></thead><tbody>
+                    {% if m.citizenship %}<tr><td>Citizenship</td><td>-</td><td>-</td><td>-</td><td>{{ m.citizenship }}</td><td>-</td></tr>{% endif %}
+                    {% for loc in locs %}<tr><td>Location</td><td>{{ loc.street or '-' }}</td><td>{{ loc.city or '-' }}</td><td>{{ loc.region or '-' }}</td><td>{{ loc.country or '-' }}</td><td>{{ loc.postcode or '-' }}</td></tr>{% endfor %}
+                </tbody></table>
+                <h5>Identification Numbers <span class="muted">Total: {{ 1 if fi.identification else 0 }}</span></h5>
+                {% if fi.identification %}<table class="ad-table"><thead><tr><th>Type</th><th>Number</th></tr></thead><tbody><tr><td>Identification</td><td>{{ fi.identification }}</td></tr></tbody></table>
+                {% else %}<div class="no-data">{{ icon('list') }}No data</div>{% endif %}
+            </div>
+        </div>
+        <div>
+            <h4 class="ad-h">Aliases</h4>
+            <div class="ad-card">
+                <h5>Aliases</h5>{% for x in m.aliases %}<div class="small">{{ x }}</div>{% else %}<div class="small muted">-</div>{% endfor %}
+                <h5>Low Quality Aliases</h5><div class="small muted">-</div>
+                <h5>Native Character Names</h5><div class="small muted">-</div>
+            </div>
+        </div>
+    </div>
+    <h4 class="ad-h">Further Information</h4>
+    <details class="ad-fold" open><summary>Details</summary>
+        <span class="ad-tag green">[BIOGRAPHY]</span>
+        <ul>{% if fi.biography %}<li>{{ fi.biography }}</li>{% else %}<li class="muted">-</li>{% endif %}</ul>
+        <span class="ad-tag orange">[REPORTS]</span>
+        {% for date, text in fi.reports %}<div class="ad-date">{{ date }}</div><ul><li>{{ text }}</li></ul>
+        {% else %}<ul><li class="muted">No reports recorded.</li></ul>{% endfor %}
+    </details>
+    <h4 class="ad-h">Keywords</h4>
+    <details class="ad-fold"><summary>PEP Sub-Category</summary>{% if kd.pep_status and kd.sub_category %}<span class="badge blue">{{ kd.sub_category }}</span>{% else %}<span class="small muted">-</span>{% endif %}</details>
+    <details class="ad-fold"><summary>Keyword</summary>{% for k in (m.keywords or kd.special_interest) %}<span class="badge blue">{{ k }}</span> {% else %}<span class="small muted">-</span>{% endfor %}</details>
+</div>
+
+<div class="ad-pane" data-pane="others">
+    <div class="ad-card"><h5>Sources <span class="muted">Total: {{ m.sources|length }}</span></h5>
+        {% if m.sources %}<table class="ad-table"><thead><tr><th>Date Added</th><th>Source</th></tr></thead><tbody>
+            {% for dt, u in m.sources %}<tr><td class="nowrap">{{ dt }}</td><td title="Fictional source: the demo's records do not resolve">{{ u }}</td></tr>{% endfor %}</tbody></table>
+        {% else %}<div class="no-data">{{ icon('list') }}No data</div>{% endif %}
+    </div>
+    {% if kd.pep_status %}
+    <div class="ad-card"><h5>PEP role details</h5>
+        <div class="ad-kv"><div><span class="l">Position</span><span class="v">{{ kd.position or '-' }}</span></div>
+            <div><span class="l">Status</span><span class="v">{{ kd.pep_status }}</span></div>
+            <div><span class="l">Sub-Category</span><span class="v">{{ kd.sub_category or '-' }}</span></div></div></div>
+    {% endif %}
+    <div class="ad-card"><h5>World-Check record</h5>
+        <div class="ad-kv"><div><span class="l">World-Check ID</span><span class="v mono">{{ m.wc_id }}</span></div>
+            <div><span class="l">Types</span><span class="v">{{ m.types|join(', ') or '-' }}</span></div>
+            <div><span class="l">Match strength</span><span class="v">{{ (m.strength * 100)|round|int }}%</span></div></div>
+        <a class="btn btn-outline btn-xs" href="{{ url_for('wc_match', wc_case_id=alert.id, match_id=m.id) }}" target="_blank" rel="noopener" title="Opens in a new tab">Open the full record in World-Check<span class="ext-ic">{{ icon('external-link') }}</span></a>
+    </div>
+</div>
+{% endif %}
+</div></td>
+</tr>

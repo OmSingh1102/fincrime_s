@@ -1,0 +1,126 @@
+{# ── Document viewer ──────────────────────────────────────────────────────────
+   Zoom and pan for the document stages: the Preview dialog on the case page
+   and the Data Confirm modal. The wheel zooms around the pointer, dragging
+   pans, double-click zooms in or fits, the buttons zoom, fit and rotate;
+   +, -, 0 and the arrow keys do the same once the stage has focus.
+
+   viewer_tools(open_href) renders the button strip inside a .viewer-stage.
+   The script below (rendered by {% include %}, once per page) defines
+   viewerInit(stage): it wires one stage, stores the controller on
+   stage.viewer and returns it — {show(src), reset()}. Every .viewer-stage on
+   the page is wired at load; a stage created later calls viewerInit itself. #}
+{% macro viewer_tools(open_href='') -%}
+<div class="viewer-tools">
+    <button type="button" data-act="out" title="Zoom out (scroll down)" aria-label="Zoom out">{{ icon('zoom-out') }}</button>
+    <span class="viewer-zoom" data-zoom>100%</span>
+    <button type="button" data-act="in" title="Zoom in (scroll up)" aria-label="Zoom in">{{ icon('zoom-in') }}</button>
+    <button type="button" data-act="fit" title="Fit to panel (0)" aria-label="Fit to panel">{{ icon('maximize') }}</button>
+    <button type="button" data-act="rotate" title="Rotate 90°" aria-label="Rotate">{{ icon('rotate-cw') }}</button>
+    <a data-open href="{{ open_href }}" target="_blank" rel="noopener" title="Open in new tab" aria-label="Open in new tab">{{ icon('external-link') }}</a>
+</div>
+{%- endmacro %}
+
+<script>
+/* One controller per .viewer-stage. The state is a CSS transform on the
+   image — translate (pan), scale (zoom), rotate — with the origin at the
+   image centre, so the wheel maths below holds whatever the rotation. */
+(function () {
+    var MIN = 0.5, MAX = 8, STEP = 1.25, PAN = 40;
+    window.viewerInit = function (stage) {
+        if (stage.viewer) { return stage.viewer; }
+        var img = stage.querySelector('img');
+        var readout = stage.querySelector('[data-zoom]');
+        var openLink = stage.querySelector('[data-open]');
+        var s = { scale: 1, x: 0, y: 0, angle: 0 };
+        var drag = null;
+        img.draggable = false;
+        stage.tabIndex = 0;
+
+        function paint() {
+            img.style.transform = 'translate(' + s.x + 'px,' + s.y + 'px) scale(' + s.scale + ') rotate(' + s.angle + 'deg)';
+            if (readout) { readout.textContent = Math.round(s.scale * 100) + '%'; }
+        }
+        /* Zoom by k, keeping the stage point (cx, cy) — measured from the
+           stage centre — under the pointer. With no point, zoom on the centre. */
+        function zoom(k, cx, cy) {
+            var next = Math.min(MAX, Math.max(MIN, s.scale * k));
+            k = next / s.scale;
+            if (k === 1) { return; }
+            cx = cx || 0; cy = cy || 0;
+            s.x = cx - (cx - s.x) * k;
+            s.y = cy - (cy - s.y) * k;
+            s.scale = next;
+            paint();
+        }
+        function at(e) {
+            var r = stage.getBoundingClientRect();
+            return [e.clientX - r.left - r.width / 2, e.clientY - r.top - r.height / 2];
+        }
+        function reset() { s.scale = 1; s.x = 0; s.y = 0; s.angle = 0; paint(); }
+        function inTools(e) { return e.target.closest && e.target.closest('.viewer-tools'); }
+
+        stage.addEventListener('wheel', function (e) {
+            e.preventDefault();
+            var c = at(e);
+            zoom(e.deltaY < 0 ? STEP : 1 / STEP, c[0], c[1]);
+        }, { passive: false });
+        stage.addEventListener('dblclick', function (e) {
+            if (inTools(e)) { return; }
+            var c = at(e);
+            if (s.scale > 1.01) { reset(); } else { zoom(2 / s.scale, c[0], c[1]); }
+        });
+        stage.addEventListener('dragstart', function (e) { e.preventDefault(); });
+        stage.addEventListener('pointerdown', function (e) {
+            if (e.button !== 0 || inTools(e)) { return; }
+            drag = { id: e.pointerId, x: e.clientX - s.x, y: e.clientY - s.y };
+            stage.setPointerCapture(e.pointerId);
+            stage.classList.add('dragging');
+        });
+        stage.addEventListener('pointermove', function (e) {
+            if (!drag || e.pointerId !== drag.id) { return; }
+            s.x = e.clientX - drag.x;
+            s.y = e.clientY - drag.y;
+            paint();
+        });
+        function endDrag(e) {
+            if (!drag || e.pointerId !== drag.id) { return; }
+            drag = null;
+            stage.classList.remove('dragging');
+        }
+        stage.addEventListener('pointerup', endDrag);
+        stage.addEventListener('pointercancel', endDrag);
+        stage.addEventListener('keydown', function (e) {
+            if (e.target !== stage) { return; }   /* the buttons keep their own keys */
+            var handled = true;
+            switch (e.key) {
+                case '+': case '=': zoom(STEP); break;
+                case '-': case '_': zoom(1 / STEP); break;
+                case '0': reset(); break;
+                case 'ArrowLeft': s.x += PAN; paint(); break;
+                case 'ArrowRight': s.x -= PAN; paint(); break;
+                case 'ArrowUp': s.y += PAN; paint(); break;
+                case 'ArrowDown': s.y -= PAN; paint(); break;
+                default: handled = false;
+            }
+            if (handled) { e.preventDefault(); }
+        });
+        stage.querySelectorAll('[data-act]').forEach(function (btn) {
+            btn.addEventListener('click', function () {
+                var act = btn.dataset.act;
+                if (act === 'in') { zoom(STEP); }
+                else if (act === 'out') { zoom(1 / STEP); }
+                else if (act === 'fit') { reset(); }
+                else if (act === 'rotate') { s.angle = (s.angle + 90) % 360; paint(); }
+            });
+        });
+        stage.viewer = {
+            reset: reset,
+            show: function (src) { img.src = src; if (openLink) { openLink.href = src; } reset(); }
+        };
+        return stage.viewer;
+    };
+    document.addEventListener('DOMContentLoaded', function () {
+        document.querySelectorAll('.viewer-stage').forEach(function (stage) { window.viewerInit(stage); });
+    });
+})();
+</script>

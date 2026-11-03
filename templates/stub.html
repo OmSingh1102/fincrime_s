@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block title %}{{ title }} - FinCrime Operations Hub{% endblock %}
+{% block content %}
+<div class="page-head"><div><h2>{{ title }}</h2><p>{{ lead }}</p></div></div>
+<div class="empty-state">
+    <div class="empty-icon" aria-hidden="true">{{ icon('layers') }}</div>
+    <h3>{{ title }} is being built</h3>
+    <p>{{ lead }}</p>
+    <a class="btn btn-outline btn-sm" href="{{ home_url }}">Back to the case list</a>
+</div>
+{% endblock %}
